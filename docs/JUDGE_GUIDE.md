@@ -37,7 +37,7 @@ The public passport is read-only. It distinguishes self-declared work, contact c
 
 ## Optional shared demo accounts
 
-Available when the deployment enables `SEED_DEMO=true`:
+Available after the deployment owner runs `supabase/demo.sql` during database setup:
 
 | Role | Email | Password |
 | --- | --- | --- |

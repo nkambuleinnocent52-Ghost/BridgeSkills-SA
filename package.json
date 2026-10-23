@@ -1,6 +1,6 @@
 {
   "name": "skillbridge-sa",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,8 +10,10 @@
     "start": "node --env-file-if-exists=.env server/index.js",
     "preview": "vite preview --host 0.0.0.0",
     "test": "node --test --test-concurrency=1 tests/*.test.js",
-    "reports": "node server/reports.js",
-    "dev:web": "vite --host 0.0.0.0"
+    "reports": "node --env-file-if-exists=.env server/reports.js",
+    "dev:web": "vite --host 0.0.0.0",
+    "db:setup": "node --env-file-if-exists=.env server/setup-database.js",
+    "test:postgres": "node --env-file-if-exists=.env server/test-postgres.js"
   },
   "devDependencies": {
     "vite": "^7.3.0"
@@ -20,6 +22,7 @@
     "express": "^5.3.0",
     "express-rate-limit": "^8.7.1",
     "helmet": "^8.3.0",
+    "pg": "^8.23.1",
     "qrcode": "^1.5.4"
   },
   "engines": {

@@ -1,3 +1,4 @@
+import { DatabaseRateLimitStore } from "./rate-limit-store.js";
 import express from "express";
 import helmet from "helmet";
 import { rateLimit } from "express-rate-limit";
@@ -99,6 +100,29 @@ export function createApp(
   } = {},
 ) {
   const app = express();
+  for (const method of ["post", "put", "delete", "patch"]) {
+    const register = app[method].bind(app);
+    app[method] = (path, ...handlers) => {
+      const handler = handlers.pop();
+      return register(path, ...handlers, async (req, res, next) => {
+        const sendJson = res.json;
+        let payload;
+        res.json = function (body) {
+          payload = body;
+          return this;
+        };
+        try {
+          await store.transaction(() => handler(req, res, next));
+          res.json = sendJson;
+          return res.json(payload);
+        } catch (error) {
+          res.json = sendJson;
+          next(error);
+        }
+      });
+    };
+  }
+
   app.disable("x-powered-by");
   if (production) app.set("trust proxy", 1);
   app.use(
@@ -119,7 +143,11 @@ export function createApp(
       strictTransportSecurity: production ? undefined : false,
     }),
   );
-  app.use(express.json({ limit: "48kb" }));
+  app.use(
+    express.json({
+      limit: "48kb",
+    }),
+  );
   app.use((req, res, next) => {
     if (
       !["GET", "HEAD", "OPTIONS"].includes(req.method) &&
@@ -128,7 +156,9 @@ export function createApp(
         typeof req.body !== "object" ||
         Array.isArray(req.body))
     )
-      return res.status(400).json({ error: "Send a JSON object." });
+      return res.status(400).json({
+        error: "Send a JSON object.",
+      });
     if (req.body === undefined) req.body = {};
     next();
   });
@@ -141,10 +171,13 @@ export function createApp(
       "/api",
       rateLimit({
         windowMs: 60000,
+        store: new DatabaseRateLimitStore(store, "api"),
         limit: 240,
         standardHeaders: "draft-8",
         legacyHeaders: false,
-        message: { error: "Too many requests. Please wait a minute." },
+        message: {
+          error: "Too many requests. Please wait a minute.",
+        },
       }),
     );
   app.use((req, res, next) => {
@@ -161,7 +194,7 @@ export function createApp(
     }
     next();
   });
-  app.use((req, _res, next) => {
+  app.use(async (req, _res, next) => {
     let token;
     try {
       token = decodeURIComponent(
@@ -174,7 +207,7 @@ export function createApp(
     } catch {}
     if (token) {
       req.sessionHash = hashToken(token);
-      req.user = store.get(
+      req.user = await store.get(
         "SELECT u.* FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at>?",
         req.sessionHash,
         now(),
@@ -188,8 +221,8 @@ export function createApp(
     req.user?.role === expected
       ? next()
       : next(new HttpError(403, `This action needs a ${expected} account.`));
-  const ownEvidence = (req, evidenceId) => {
-    const e = store.get(
+  const ownEvidence = async (req, evidenceId) => {
+    const e = await store.get(
       "SELECT * FROM evidence WHERE id=? AND talent_id=?",
       evidenceId,
       req.user.id,
@@ -197,8 +230,8 @@ export function createApp(
     if (!e) fail(404, "Evidence not found.");
     return e;
   };
-  const taskOwned = (req, taskId) => {
-    const t = store.get(
+  const taskOwned = async (req, taskId) => {
+    const t = await store.get(
       "SELECT * FROM tasks WHERE id=? AND business_id=?",
       taskId,
       req.user.id,
@@ -206,13 +239,13 @@ export function createApp(
     if (!t) fail(404, "Task not found.");
     return t;
   };
-  const snapshot = (eid) =>
-    store.run(
+  const snapshot = async (eid) =>
+    await store.run(
       "INSERT INTO evidence_versions(evidence_id,revision,title,organisation,description,skills,work_url,period,created_at) SELECT id,revision,title,organisation,description,skills,work_url,period,updated_at FROM evidence WHERE id=?",
       eid,
     );
-  const event = (applicationId, actor, action, detail = "") =>
-    store.run(
+  const event = async (applicationId, actor, action, detail = "") =>
+    await store.run(
       "INSERT INTO events(id,application_id,actor_id,action,detail,created_at) VALUES(?,?,?,?,?,?)",
       id(),
       applicationId,
@@ -221,10 +254,10 @@ export function createApp(
       detail,
       now(),
     );
-  function startSession(res, user) {
-    store.run("DELETE FROM sessions WHERE expires_at<=?", now());
+  async function startSession(res, user) {
+    await store.run("DELETE FROM sessions WHERE expires_at<=?", now());
     const token = randomBytes(32).toString("hex");
-    store.run(
+    await store.run(
       "INSERT INTO sessions VALUES(?,?,?)",
       hashToken(token),
       user.id,
@@ -241,6 +274,7 @@ export function createApp(
   const authLimit = enableLimits
     ? rateLimit({
         windowMs: 15 * 60000,
+        store: new DatabaseRateLimitStore(store, "auth"),
         limit: 40,
         standardHeaders: "draft-8",
         legacyHeaders: false,
@@ -249,11 +283,19 @@ export function createApp(
         },
       })
     : (_req, _res, next) => next();
-  app.get("/api/health", (_req, res) => {
-    store.get("SELECT 1");
-    res.json({ status: "ok", storage: "sqlite", time: now() });
+  app.get("/api/health", async (_req, res) => {
+    await store.get("SELECT id FROM users LIMIT 1");
+    res.json({
+      status: "ok",
+      storage: store.kind,
+      time: now(),
+    });
   });
-  app.get("/api/me", (req, res) => res.json({ user: publicUser(req.user) }));
+  app.get("/api/me", (req, res) =>
+    res.json({
+      user: publicUser(req.user),
+    }),
+  );
   app.post("/api/auth/register", authLimit, async (req, res) => {
     const data = req.body;
     const mail = email(data.email),
@@ -261,14 +303,14 @@ export function createApp(
       password = passwordInput(data.password, 10);
     if (!["talent", "business"].includes(data.role))
       fail(400, "Choose a talent or business account.");
-    if (store.get("SELECT id FROM users WHERE email=?", mail))
+    if (await store.get("SELECT id FROM users WHERE email=?", mail))
       fail(409, "An account with this email already exists. Sign in instead.");
     const uid = id(),
       hash = await passwordHash(password);
     // Recheck after async password hashing so concurrent registrations cannot bypass uniqueness.
-    if (store.get("SELECT id FROM users WHERE email=?", mail))
+    if (await store.get("SELECT id FROM users WHERE email=?", mail))
       fail(409, "An account with this email already exists. Sign in instead.");
-    store.run(
+    await store.run(
       "INSERT INTO users(id,email,password_hash,name,role,passport_token,created_at) VALUES(?,?,?,?,?,?,?)",
       uid,
       mail,
@@ -278,37 +320,43 @@ export function createApp(
       id(),
       now(),
     );
-    const user = store.get("SELECT * FROM users WHERE id=?", uid);
-    startSession(res, user);
-    res.status(201).json({ user: publicUser(user) });
+    const user = await store.get("SELECT * FROM users WHERE id=?", uid);
+    await startSession(res, user);
+    res.status(201).json({
+      user: publicUser(user),
+    });
   });
   app.post("/api/auth/login", authLimit, async (req, res) => {
     const mail = email(req.body.email),
       password = passwordInput(req.body.password),
-      user = store.get("SELECT * FROM users WHERE email=?", mail);
+      user = await store.get("SELECT * FROM users WHERE email=?", mail);
     if (!user || !(await passwordMatches(password, user.password_hash)))
       fail(401, "Email or password is incorrect.");
-    startSession(res, user);
-    res.json({ user: publicUser(user) });
+    await startSession(res, user);
+    res.json({
+      user: publicUser(user),
+    });
   });
-  app.post("/api/auth/logout", signed, (req, res) => {
-    store.run("DELETE FROM sessions WHERE token_hash=?", req.sessionHash);
+  app.post("/api/auth/logout", signed, async (req, res) => {
+    await store.run("DELETE FROM sessions WHERE token_hash=?", req.sessionHash);
     res.clearCookie("sb_session", {
       httpOnly: true,
       secure: production,
       sameSite: "lax",
       path: "/",
     });
-    res.json({ ok: true });
+    res.json({
+      ok: true,
+    });
   });
-  app.put("/api/profile", signed, (req, res) => {
+  app.put("/api/profile", signed, async (req, res) => {
     const d = req.body;
     const name = text(d.name, "Name", 2, 80),
       headline = text(d.headline || "", "Headline", 0, 100),
       location = text(d.location || "", "Location", 0, 80),
       bio = text(d.bio || "", "About you", 0, 1500),
       list = req.user.role === "talent" ? skills(d.skills) : [];
-    store.run(
+    await store.run(
       "UPDATE users SET name=?,headline=?,location=?,bio=?,skills=? WHERE id=?",
       name,
       headline,
@@ -319,64 +367,69 @@ export function createApp(
     );
     res.json({
       user: publicUser(
-        store.get("SELECT * FROM users WHERE id=?", req.user.id),
+        await store.get("SELECT * FROM users WHERE id=?", req.user.id),
       ),
     });
   });
-  app.get("/api/tasks", (req, res) => {
+  app.get("/api/tasks", async (req, res) => {
     const userSkills =
       req.user?.role === "talent"
         ? [
             ...new Set([
               ...JSON.parse(req.user.skills),
-              ...store
-                .all(
+              ...(
+                await store.all(
                   "SELECT skills FROM evidence WHERE talent_id=?",
                   req.user.id,
                 )
-                .flatMap((e) => JSON.parse(e.skills)),
-              ...store
-                .all(
+              ).flatMap((e) => JSON.parse(e.skills)),
+              ...(
+                await store.all(
                   "SELECT t.skills FROM applications a JOIN tasks t ON t.id=a.task_id WHERE a.talent_id=? AND a.status='completed'",
                   req.user.id,
                 )
-                .flatMap((t) => JSON.parse(t.skills)),
+              ).flatMap((t) => JSON.parse(t.skills)),
             ]),
           ]
         : [];
     const norm = (s) => s.toLowerCase().trim();
-    const tasks = store
-      .all(
+    const tasks = (
+      await store.all(
         `SELECT t.*,u.name AS business_name,u.location AS location,(SELECT COUNT(*) FROM applications a WHERE a.task_id=t.id) AS applicants FROM tasks t JOIN users u ON u.id=t.business_id WHERE t.status='open' AND t.deadline>=? ORDER BY t.created_at DESC`,
         new Date().toISOString().slice(0, 10),
       )
-      .map((t) => {
-        const task = decodeTask(t);
-        const matching = task.skills.filter((s) =>
-          userSkills.some((u) => norm(u) === norm(s)),
-        );
-        return {
-          ...task,
-          matchedSkills: matching,
-          matchReason: matching.length
-            ? `Matches your recorded skills: ${matching.join(", ")}.`
-            : userSkills.length
-              ? "No exact skill match yet. Read the brief before applying."
-              : "Add skills to your profile to see explained matches.",
-        };
-      });
+    ).map((t) => {
+      const task = decodeTask(t);
+      const matching = task.skills.filter((s) =>
+        userSkills.some((u) => norm(u) === norm(s)),
+      );
+      return {
+        ...task,
+        matchedSkills: matching,
+        matchReason: matching.length
+          ? `Matches your recorded skills: ${matching.join(", ")}.`
+          : userSkills.length
+            ? "No exact skill match yet. Read the brief before applying."
+            : "Add skills to your profile to see explained matches.",
+      };
+    });
     tasks.sort((a, b) => b.matchedSkills.length - a.matchedSkills.length);
-    res.json({ tasks, categories });
+    res.json({
+      tasks,
+      categories,
+    });
   });
-  app.get("/api/tasks/:id", (req, res) => {
-    const t = store.get(
+  app.get("/api/tasks/:id", async (req, res) => {
+    const t = await store.get(
       "SELECT t.*,u.name AS business_name,u.location FROM tasks t JOIN users u ON u.id=t.business_id WHERE t.id=?",
       req.params.id,
     );
     if (!t) fail(404, "Task not found.");
-    res.json({ task: decodeTask(t) });
+    res.json({
+      task: decodeTask(t),
+    });
   });
-  app.post("/api/tasks", signed, role("business"), (req, res) => {
+  app.post("/api/tasks", signed, role("business"), async (req, res) => {
     const d = req.body,
       title = text(d.title, "Task title", 8, 120),
       description = text(d.description, "Brief", 30, 4000),
@@ -394,7 +447,7 @@ export function createApp(
     )
       fail(400, "Choose a valid deadline of today or later.");
     const taskId = id();
-    store.run(
+    await store.run(
       "INSERT INTO tasks(id,business_id,title,description,category,skills,budget,deadline,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
       taskId,
       req.user.id,
@@ -406,14 +459,19 @@ export function createApp(
       d.deadline,
       now(),
     );
-    res.status(201).json({ id: taskId });
+    res.status(201).json({
+      id: taskId,
+    });
   });
   app.post(
     "/api/tasks/:id/applications",
     signed,
     role("talent"),
-    (req, res) => {
-      const t = store.get("SELECT * FROM tasks WHERE id=?", req.params.id);
+    async (req, res) => {
+      const t = await store.get(
+        "SELECT * FROM tasks WHERE id=?",
+        req.params.id,
+      );
       if (!t) fail(404, "Task not found.");
       if (
         t.status !== "open" ||
@@ -421,7 +479,7 @@ export function createApp(
       )
         fail(409, "This task is no longer accepting applications.");
       if (
-        store.get(
+        await store.get(
           "SELECT id FROM applications WHERE task_id=? AND talent_id=?",
           t.id,
           req.user.id,
@@ -430,8 +488,8 @@ export function createApp(
         fail(409, "You have already applied for this task.");
       const pitch = text(req.body.pitch, "Application", 20, 2500),
         aid = id();
-      store.transaction(() => {
-        store.run(
+      await store.transaction(async () => {
+        await store.run(
           "INSERT INTO applications(id,task_id,talent_id,pitch,applied_at,updated_at) VALUES(?,?,?,?,?,?)",
           aid,
           t.id,
@@ -440,83 +498,92 @@ export function createApp(
           now(),
           now(),
         );
-        event(aid, req.user.id, "Applied", pitch);
+        await event(aid, req.user.id, "Applied", pitch);
       });
-      res.status(201).json({ id: aid });
+      res.status(201).json({
+        id: aid,
+      });
     },
   );
-  app.get("/api/projects", signed, (req, res) => {
+  app.get("/api/projects", signed, async (req, res) => {
     const condition =
       req.user.role === "business" ? "t.business_id=?" : "a.talent_id=?";
-    const list = store
-      .all(
-        `SELECT a.*,t.title,t.description,t.category,t.skills,t.budget,t.deadline,t.business_id,u.name AS business_name,p.name AS talent_name,p.passport_token,p.share_public FROM applications a JOIN tasks t ON t.id=a.task_id JOIN users u ON u.id=t.business_id JOIN users p ON p.id=a.talent_id WHERE ${condition} ORDER BY a.updated_at DESC`,
-        req.user.id,
-      )
-      .map((a) => ({
+    const list = await Promise.all(
+      (
+        await store.all(
+          `SELECT a.*,t.title,t.description,t.category,t.skills,t.budget,t.deadline,t.business_id,u.name AS business_name,p.name AS talent_name,p.passport_token,p.share_public FROM applications a JOIN tasks t ON t.id=a.task_id JOIN users u ON u.id=t.business_id JOIN users p ON p.id=a.talent_id WHERE ${condition} ORDER BY a.updated_at DESC`,
+          req.user.id,
+        )
+      ).map(async (a) => ({
         ...a,
         skills: JSON.parse(a.skills),
-        events: store.all(
+        events: await store.all(
           "SELECT e.action,e.detail,e.created_at,u.name AS actor_name FROM events e JOIN users u ON u.id=e.actor_id WHERE e.application_id=? ORDER BY e.rowid",
           a.id,
         ),
-      }));
+      })),
+    );
     const owned =
       req.user.role === "business"
-        ? store
-            .all(
+        ? (
+            await store.all(
               "SELECT t.*,(SELECT COUNT(*) FROM applications a WHERE a.task_id=t.id) AS applicants FROM tasks t WHERE t.business_id=? ORDER BY t.created_at DESC",
               req.user.id,
             )
-            .map(decodeTask)
+          ).map(decodeTask)
         : [];
-    res.json({ projects: list, tasks: owned });
+    res.json({
+      projects: list,
+      tasks: owned,
+    });
   });
   app.post(
     "/api/applications/:id/select",
     signed,
     role("business"),
-    (req, res) => {
-      const a = store.get(
+    async (req, res) => {
+      const a = await store.get(
         "SELECT * FROM applications WHERE id=?",
         req.params.id,
       );
       if (!a) fail(404, "Application not found.");
-      const t = taskOwned(req, a.task_id);
+      const t = await taskOwned(req, a.task_id);
       if (t.status !== "open" || a.status !== "applied")
         fail(
           409,
           "This task already has a selected applicant or the application is no longer available.",
         );
-      store.transaction(() => {
-        store.run("UPDATE tasks SET status='assigned' WHERE id=?", t.id);
-        store.run(
+      await store.transaction(async () => {
+        await store.run("UPDATE tasks SET status='assigned' WHERE id=?", t.id);
+        await store.run(
           "UPDATE applications SET status='not_selected',updated_at=? WHERE task_id=? AND id<>?",
           now(),
           t.id,
           a.id,
         );
-        store.run(
+        await store.run(
           "UPDATE applications SET status='assigned',updated_at=? WHERE id=?",
           now(),
           a.id,
         );
-        event(
+        await event(
           a.id,
           req.user.id,
           "Selected",
           "Business selected this applicant.",
         );
       });
-      res.json({ ok: true });
+      res.json({
+        ok: true,
+      });
     },
   );
   app.post(
     "/api/applications/:id/submit",
     signed,
     role("talent"),
-    (req, res) => {
-      const a = store.get(
+    async (req, res) => {
+      const a = await store.get(
         "SELECT * FROM applications WHERE id=? AND talent_id=?",
         req.params.id,
         req.user.id,
@@ -537,8 +604,8 @@ export function createApp(
           400,
           "Add a work link so the business can review your deliverable.",
         );
-      store.transaction(() => {
-        store.run(
+      await store.transaction(async () => {
+        await store.run(
           "UPDATE applications SET status='submitted',submission=?,work_url=?,public_consent=?,updated_at=? WHERE id=?",
           submission,
           url,
@@ -546,85 +613,98 @@ export function createApp(
           now(),
           a.id,
         );
-        store.run("UPDATE tasks SET status='submitted' WHERE id=?", a.task_id);
-        event(a.id, req.user.id, "Submitted", submission);
+        await store.run(
+          "UPDATE tasks SET status='submitted' WHERE id=?",
+          a.task_id,
+        );
+        await event(a.id, req.user.id, "Submitted", submission);
       });
-      res.json({ ok: true });
+      res.json({
+        ok: true,
+      });
     },
   );
   app.post(
     "/api/applications/:id/review",
     signed,
     role("business"),
-    (req, res) => {
-      const a = store.get(
+    async (req, res) => {
+      const a = await store.get(
         "SELECT * FROM applications WHERE id=?",
         req.params.id,
       );
       if (!a) fail(404, "Project not found.");
-      taskOwned(req, a.task_id);
+      await taskOwned(req, a.task_id);
       if (a.status !== "submitted")
         fail(409, "Only submitted work can be reviewed.");
       if (!["approve", "changes"].includes(req.body.action))
         fail(400, "Choose approve or request changes.");
       const feedback = text(req.body.feedback, "Business feedback", 10, 2000),
         approved = req.body.action === "approve";
-      store.transaction(() => {
-        store.run(
+      await store.transaction(async () => {
+        await store.run(
           "UPDATE applications SET status=?,feedback=?,updated_at=? WHERE id=?",
           approved ? "completed" : "changes_requested",
           feedback,
           now(),
           a.id,
         );
-        store.run(
+        await store.run(
           "UPDATE tasks SET status=? WHERE id=?",
           approved ? "completed" : "assigned",
           a.task_id,
         );
-        event(
+        await event(
           a.id,
           req.user.id,
           approved ? "Approved" : "Changes requested",
           feedback,
         );
       });
-      res.json({ ok: true });
+      res.json({
+        ok: true,
+      });
     },
   );
   app.put(
     "/api/applications/:id/visibility",
     signed,
     role("talent"),
-    (req, res) => {
-      const a = store.get(
+    async (req, res) => {
+      const a = await store.get(
         "SELECT id FROM applications WHERE id=? AND talent_id=?",
         req.params.id,
         req.user.id,
       );
       if (!a) fail(404, "Project not found.");
-      store.run(
+      await store.run(
         "UPDATE applications SET public_consent=? WHERE id=?",
         consent(req.body.publicConsent),
         a.id,
       );
-      res.json({ ok: true });
+      res.json({
+        ok: true,
+      });
     },
   );
-  app.get("/api/evidence", signed, role("talent"), (req, res) => {
-    const records = store
-      .all(
-        "SELECT * FROM evidence WHERE talent_id=? ORDER BY updated_at DESC",
-        req.user.id,
-      )
-      .map((e) => ({
+  app.get("/api/evidence", signed, role("talent"), async (req, res) => {
+    const records = await Promise.all(
+      (
+        await store.all(
+          "SELECT * FROM evidence WHERE talent_id=? ORDER BY updated_at DESC",
+          req.user.id,
+        )
+      ).map(async (e) => ({
         ...decodeEvidence(e),
-        confirmations: store.all(
+        confirmations: await store.all(
           "SELECT c.id,c.revision,c.status,c.statement,c.relationship,c.created_at,c.responded_at,u.name AS confirmer_name FROM confirmations c JOIN users u ON u.id=c.receiver_id WHERE c.evidence_id=? ORDER BY c.rowid DESC",
           e.id,
         ),
-      }));
-    res.json({ evidence: records });
+      })),
+    );
+    res.json({
+      evidence: records,
+    });
   });
   function evidenceFields(d) {
     return [
@@ -637,11 +717,11 @@ export function createApp(
       consent(d.publicConsent),
     ];
   }
-  app.post("/api/evidence", signed, role("talent"), (req, res) => {
+  app.post("/api/evidence", signed, role("talent"), async (req, res) => {
     const values = evidenceFields(req.body),
       eid = id();
-    store.transaction(() => {
-      store.run(
+    await store.transaction(async () => {
+      await store.run(
         "INSERT INTO evidence(id,talent_id,title,organisation,description,skills,work_url,period,public_consent,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
         eid,
         req.user.id,
@@ -649,93 +729,116 @@ export function createApp(
         now(),
         now(),
       );
-      snapshot(eid);
+      await snapshot(eid);
     });
-    res.status(201).json({ id: eid });
+    res.status(201).json({
+      id: eid,
+    });
   });
-  app.put("/api/evidence/:id", signed, role("talent"), (req, res) => {
-    ownEvidence(req, req.params.id);
+  app.put("/api/evidence/:id", signed, role("talent"), async (req, res) => {
+    await ownEvidence(req, req.params.id);
     const values = evidenceFields(req.body);
-    store.transaction(() => {
-      store.run(
+    await store.transaction(async () => {
+      await store.run(
         "UPDATE evidence SET title=?,organisation=?,description=?,skills=?,work_url=?,period=?,public_consent=?,revision=revision+1,updated_at=? WHERE id=?",
         ...values,
         now(),
         req.params.id,
       );
-      snapshot(req.params.id);
-      store.run(
+      await snapshot(req.params.id);
+      await store.run(
         "UPDATE confirmations SET status='superseded' WHERE evidence_id=? AND status IN ('requested','confirmed')",
         req.params.id,
       );
     });
-    res.json({ ok: true });
+    res.json({
+      ok: true,
+    });
   });
   app.put(
     "/api/evidence/:id/visibility",
     signed,
     role("talent"),
-    (req, res) => {
-      ownEvidence(req, req.params.id);
-      store.run(
+    async (req, res) => {
+      await ownEvidence(req, req.params.id);
+      await store.run(
         "UPDATE evidence SET public_consent=? WHERE id=?",
         consent(req.body.publicConsent),
         req.params.id,
       );
-      res.json({ ok: true });
+      res.json({
+        ok: true,
+      });
     },
   );
-  app.delete("/api/evidence/:id", signed, role("talent"), (req, res) => {
-    ownEvidence(req, req.params.id);
-    store.run("DELETE FROM evidence WHERE id=?", req.params.id);
-    res.json({ ok: true });
+  app.delete("/api/evidence/:id", signed, role("talent"), async (req, res) => {
+    await ownEvidence(req, req.params.id);
+    await store.run("DELETE FROM evidence WHERE id=?", req.params.id);
+    res.json({
+      ok: true,
+    });
   });
-  app.post("/api/evidence/:id/requests", signed, role("talent"), (req, res) => {
-    const e = ownEvidence(req, req.params.id),
-      mail = email(req.body.email);
-    const receiver = store.get("SELECT id FROM users WHERE email=?", mail);
-    if (!receiver)
-      fail(
-        404,
-        "Ask your contact to create an account first, then request confirmation with their sign-in email.",
+  app.post(
+    "/api/evidence/:id/requests",
+    signed,
+    role("talent"),
+    async (req, res) => {
+      const e = await ownEvidence(req, req.params.id),
+        mail = email(req.body.email);
+      const receiver = await store.get(
+        "SELECT id FROM users WHERE email=?",
+        mail,
       );
-    if (receiver.id === req.user.id)
-      fail(400, "You cannot confirm your own experience.");
-    if (
-      store.get(
-        "SELECT id FROM confirmations WHERE evidence_id=? AND receiver_id=? AND revision=?",
+      if (!receiver)
+        fail(
+          404,
+          "Ask your contact to create an account first, then request confirmation with their sign-in email.",
+        );
+      if (receiver.id === req.user.id)
+        fail(400, "You cannot confirm your own experience.");
+      if (
+        await store.get(
+          "SELECT id FROM confirmations WHERE evidence_id=? AND receiver_id=? AND revision=?",
+          e.id,
+          receiver.id,
+          e.revision,
+        )
+      )
+        fail(
+          409,
+          "You have already requested this person’s confirmation for this version.",
+        );
+      const requestId = id();
+      await store.run(
+        "INSERT INTO confirmations(id,evidence_id,requester_id,receiver_id,revision,status,created_at) VALUES(?,?,?,?,?,'requested',?)",
+        requestId,
         e.id,
+        req.user.id,
         receiver.id,
         e.revision,
-      )
-    )
-      fail(
-        409,
-        "You have already requested this person’s confirmation for this version.",
+        now(),
       );
-    const requestId = id();
-    store.run(
-      "INSERT INTO confirmations(id,evidence_id,requester_id,receiver_id,revision,status,created_at) VALUES(?,?,?,?,?,'requested',?)",
-      requestId,
-      e.id,
-      req.user.id,
-      receiver.id,
-      e.revision,
-      now(),
-    );
-    res.status(201).json({ id: requestId });
-  });
-  app.get("/api/confirmations", signed, (req, res) => {
-    const list = store
-      .all(
+      res.status(201).json({
+        id: requestId,
+      });
+    },
+  );
+  app.get("/api/confirmations", signed, async (req, res) => {
+    const list = (
+      await store.all(
         `SELECT c.*,v.title,v.organisation,v.description,v.skills,v.work_url,v.period,e.revision AS current_revision,u.name AS talent_name FROM confirmations c JOIN evidence e ON e.id=c.evidence_id JOIN evidence_versions v ON v.evidence_id=c.evidence_id AND v.revision=c.revision JOIN users u ON u.id=c.requester_id WHERE c.receiver_id=? ORDER BY c.rowid DESC`,
         req.user.id,
       )
-      .map((c) => ({ ...c, skills: JSON.parse(c.skills) }));
-    res.json({ confirmations: list });
+    ).map((c) => ({
+      ...c,
+      skills: JSON.parse(c.skills),
+    }));
+    res.json({
+      confirmations: list,
+    });
   });
-  app.post("/api/confirmations/:id/respond", signed, (req, res) => {
-    const c = store.get(
+  app.post("/api/confirmations/:id/respond", signed, async (req, res) => {
+    const c = await store.get(
       "SELECT c.*,e.revision AS current_revision FROM confirmations c JOIN evidence e ON e.id=c.evidence_id WHERE c.id=? AND c.receiver_id=?",
       req.params.id,
       req.user.id,
@@ -747,7 +850,7 @@ export function createApp(
       fail(400, "Choose confirm or decline.");
     const statement = text(req.body.statement, "Your statement", 10, 1500),
       relationship = text(req.body.relationship, "Your relationship", 3, 100);
-    store.run(
+    await store.run(
       "UPDATE confirmations SET status=?,statement=?,relationship=?,responded_at=? WHERE id=?",
       req.body.action === "confirm" ? "confirmed" : "declined",
       statement,
@@ -755,10 +858,12 @@ export function createApp(
       now(),
       c.id,
     );
-    res.json({ ok: true });
+    res.json({
+      ok: true,
+    });
   });
-  app.post("/api/confirmations/:id/withdraw", signed, (req, res) => {
-    const c = store.get(
+  app.post("/api/confirmations/:id/withdraw", signed, async (req, res) => {
+    const c = await store.get(
       "SELECT * FROM confirmations WHERE id=? AND receiver_id=?",
       req.params.id,
       req.user.id,
@@ -766,37 +871,41 @@ export function createApp(
     if (!c) fail(404, "Confirmation not found.");
     if (c.status !== "confirmed")
       fail(409, "Only a current confirmation can be withdrawn.");
-    store.run(
+    await store.run(
       "UPDATE confirmations SET status='withdrawn',responded_at=? WHERE id=?",
       now(),
       c.id,
     );
-    res.json({ ok: true });
+    res.json({
+      ok: true,
+    });
   });
-  function passport(user, includePrivate = false) {
-    const evidence = store
-      .all(
-        `SELECT id,title,organisation,description,skills,work_url,period,revision,created_at,updated_at,public_consent FROM evidence WHERE talent_id=? ${includePrivate ? "" : "AND public_consent=1"} ORDER BY updated_at DESC`,
-        user.id,
-      )
-      .map((e) => ({
+  async function passport(user, includePrivate = false) {
+    const evidence = await Promise.all(
+      (
+        await store.all(
+          `SELECT id,title,organisation,description,skills,work_url,period,revision,created_at,updated_at,public_consent FROM evidence WHERE talent_id=? ${includePrivate ? "" : "AND public_consent=1"} ORDER BY updated_at DESC`,
+          user.id,
+        )
+      ).map(async (e) => ({
         ...decodeEvidence(e),
-        confirmations: store.all(
+        confirmations: await store.all(
           "SELECT u.name AS confirmer_name,c.relationship,c.statement,c.responded_at FROM confirmations c JOIN users u ON u.id=c.receiver_id WHERE c.evidence_id=? AND c.revision=? AND c.status='confirmed'",
           e.id,
           e.revision,
         ),
-      }));
-    const completed = store
-      .all(
+      })),
+    );
+    const completed = (
+      await store.all(
         `SELECT a.id,a.submission,a.work_url,a.feedback,a.updated_at,a.public_consent,t.title,t.description,t.skills,t.budget,u.name AS business_name,t.id AS task_id FROM applications a JOIN tasks t ON t.id=a.task_id JOIN users u ON u.id=t.business_id WHERE a.talent_id=? AND a.status='completed' ${includePrivate ? "" : "AND a.public_consent=1"} ORDER BY a.updated_at DESC`,
         user.id,
       )
-      .map((a) => ({
-        ...a,
-        skills: JSON.parse(a.skills),
-        isDemo: a.task_id.startsWith("demo-"),
-      }));
+    ).map((a) => ({
+      ...a,
+      skills: JSON.parse(a.skills),
+      isDemo: a.task_id.startsWith("demo-"),
+    }));
     const p = publicUser(user);
     delete p.passportToken;
     delete p.id;
@@ -809,11 +918,11 @@ export function createApp(
         "This passport records self-declared experience, contact confirmations and business-approved projects. It is not a qualification, independent skills assessment or NQF certification.",
     };
   }
-  app.get("/api/passport", signed, role("talent"), (req, res) => {
+  app.get("/api/passport", signed, role("talent"), async (req, res) => {
     const path = `/passport/${req.user.passport_token}`,
       origin = baseUrl || `${req.protocol}://${req.get("host")}`;
     res.json({
-      ...passport(req.user, true),
+      ...(await passport(req.user, true)),
       sharePublic: !!req.user.share_public,
       url: `${origin}${path}`,
       qrDataUrl: null,
@@ -825,57 +934,65 @@ export function createApp(
     res.json({
       qrDataUrl: await QRCode.toDataURL(
         `${origin}/passport/${req.user.passport_token}`,
-        { width: 300, margin: 2, errorCorrectionLevel: "M" },
+        {
+          width: 300,
+          margin: 2,
+          errorCorrectionLevel: "M",
+        },
       ),
     });
   });
-  app.put("/api/passport/sharing", signed, role("talent"), (req, res) => {
-    store.run(
+  app.put("/api/passport/sharing", signed, role("talent"), async (req, res) => {
+    await store.run(
       "UPDATE users SET share_public=? WHERE id=?",
       consent(req.body.sharePublic),
       req.user.id,
     );
-    res.json({ ok: true });
+    res.json({
+      ok: true,
+    });
   });
-  app.post("/api/passport/rotate", signed, role("talent"), (req, res) => {
-    store.run(
+  app.post("/api/passport/rotate", signed, role("talent"), async (req, res) => {
+    await store.run(
       "UPDATE users SET passport_token=? WHERE id=?",
       id(),
       req.user.id,
     );
-    res.json({ ok: true });
+    res.json({
+      ok: true,
+    });
   });
-  app.get("/api/public/passports/:token", (req, res) => {
-    const user = store.get(
+  app.get("/api/public/passports/:token", async (req, res) => {
+    const user = await store.get(
       "SELECT * FROM users WHERE passport_token=? AND share_public=1 AND role=?",
       req.params.token,
       "talent",
     );
     if (!user) fail(404, "This passport is private or the link has changed.");
-    res.json(passport(user));
+    res.json(await passport(user));
   });
-  app.post("/api/reports", signed, (req, res) => {
+  app.post("/api/reports", signed, async (req, res) => {
     const type = req.body.targetType,
       target = text(req.body.targetId, "Report target", 1, 100),
       reason = text(req.body.reason, "Reason", 15, 2000);
     let targetExists;
     if (type === "task")
-      targetExists = store.get("SELECT id FROM tasks WHERE id=?", target);
+      targetExists = await store.get("SELECT id FROM tasks WHERE id=?", target);
     else if (type === "evidence")
-      targetExists = store.get(
+      targetExists = await store.get(
         "SELECT id FROM evidence WHERE id=? AND (public_consent=1 OR talent_id=?)",
         target,
         req.user.id,
       );
     else if (type === "passport")
-      targetExists = store.get(
+      targetExists = await store.get(
         "SELECT id FROM users WHERE passport_token=? AND share_public=1",
         target,
       );
     else fail(400, "Choose a valid report target.");
     if (!targetExists) fail(404, "Report target not found.");
     const reportId = id();
-    store.run(
+    await store.run(
       "INSERT INTO reports(id,reporter_id,target_type,target_id,reason,created_at) VALUES(?,?,?,?,?,?)",
       reportId,
       req.user.id,
@@ -891,13 +1008,18 @@ export function createApp(
     });
   });
   app.use("/api", (_req, res) =>
-    res.status(404).json({ error: "API route not found." }),
+    res.status(404).json({
+      error: "API route not found.",
+    }),
   );
   if (serveStatic) {
     const dist = resolve("dist");
     if (existsSync(join(dist, "index.html"))) {
       app.use(
-        express.static(dist, { index: false, maxAge: production ? "1h" : 0 }),
+        express.static(dist, {
+          index: false,
+          maxAge: production ? "1h" : 0,
+        }),
       );
       app.get("/{*path}", (_req, res) => {
         res.set("Cache-Control", "no-store");
@@ -906,13 +1028,29 @@ export function createApp(
     }
   }
   app.use((err, _req, res, _next) => {
-    if (err.status) return res.status(err.status).json({ error: err.message });
+    if (["40001", "40P01", "23505"].includes(err.code))
+      return res
+        .status(409)
+        .json({
+          error:
+            "Another update changed this record, or it already exists. Refresh and try again.",
+        });
+    if (err.status)
+      return res.status(err.status).json({
+        error: err.message,
+      });
     if (err.type === "entity.too.large")
-      return res.status(413).json({ error: "This request is too large." });
+      return res.status(413).json({
+        error: "This request is too large.",
+      });
     if (err instanceof SyntaxError)
-      return res.status(400).json({ error: "Invalid request data." });
-    console.error("Unexpected server error:", err.message);
-    res.status(500).json({ error: "Something went wrong. Please try again." });
+      return res.status(400).json({
+        error: "Invalid request data.",
+      });
+    console.error("Unexpected server error:", err.code || "internal_error");
+    res.status(500).json({
+      error: "Something went wrong. Please try again.",
+    });
   });
   return app;
 }

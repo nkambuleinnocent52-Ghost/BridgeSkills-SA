@@ -2,86 +2,78 @@
 
 **Turn what you can do into proof—and your next opportunity.**
 
-A working hackathon web app for South African digital talent and everyday small-business support. Talent records previous experience, requests confirmation from another account, completes business tasks and shares an opt-in QR-linked skills passport.
+A hackathon web app for South African digital talent and everyday small-business support. Talent records previous experience, requests confirmation from another account, completes business tasks and shares an opt-in QR-linked skills passport.
 
-## Run the complete app
+## Deploy without a paid disk
 
-Install **Node.js 24 LTS**. Open a terminal **in the folder containing `package.json`**:
+**Vercel Hobby + Supabase Free.** No Render service is needed. Read [DEPLOYMENT.md](docs/DEPLOYMENT.md) for the exact steps. Free-plan limits and eligibility apply; keep both services available through judging.
+
+- Vercel serves the frontend and the Express API as a Node function.
+- Supabase PostgreSQL stores users, sessions, tasks, evidence and confirmations.
+- The database connection string is a **server-only** Vercel environment variable. No database password or Supabase service key is included in the frontend.
+- Supabase is used as a database; sign-up and sign-in use this app's existing authentication. No Supabase Auth configuration or client key is needed.
+
+The app must be deployed and checked at its public HTTPS URL before it is ready for judges. Pushing this repository does not deploy it.
+
+## Run locally
+
+Install **Node.js 24 LTS**. Open a terminal in the folder containing `package.json`:
 
 ```sh
 npm ci
+npm run dev
+```
+
+The command starts the API and Vite. Open the Vite address. With no `DATABASE_URL`, development uses an ignored local SQLite file. To get fictional sample accounts and tasks, copy `.env.example` to `.env` and restart `npm run dev`.
+
+To test the full production-style frontend locally:
+
+```sh
 npm run build
 npm start
 ```
 
-Open `http://localhost:3000`. This runs the frontend and API together. Data persists in `data/skillbridge.sqlite`; never commit this directory.
+Open `http://localhost:3000`. Localhost links work on your computer, not another phone; QR phone testing needs the deployed HTTPS URL.
 
-To enable the fictional judge accounts, copy `.env.example` to `.env` and run:
+To use Supabase locally, place `DATABASE_URL` privately in `.env`, run `npm run db:setup` once and then `npm run dev`. Optional `npm run db:setup -- --demo` seeds fictional judge data. On Vercel, migrations and seeding are **not** run on requests: use Supabase's SQL Editor before deployment as described in the guide.
 
-```sh
-npm start
-```
+## Judge walkthrough
 
-Use your own accounts for a clean test. In the sign-in dialog, **Judge demo accounts** provides optional fictional accounts when `SEED_DEMO=true`:
+See [JUDGE_GUIDE.md](docs/JUDGE_GUIDE.md). For independent testing, create fresh talent and business accounts in separate browser sessions.
 
-| Account | Email | Password |
+Optional shared demo accounts are available after running `supabase/demo.sql` or the demo setup command:
+
+| Role | Email | Password |
 | --- | --- | --- |
 | Talent | talent@skillbridge.demo | TalentDemo!2026 |
 | Business | business@skillbridge.demo | BusinessDemo!2026 |
 | Contact | reviewer@skillbridge.demo | ReviewerDemo!2026 |
 
-These are public demo credentials, not deployment secrets. Shared demo activity can be changed by other testers. Do not use these accounts for private information. Seed data does not overwrite accounts, reset projects or refresh task deadlines on restart.
+These are public fictional accounts, not deployment secrets. Their state can change when other testers use them. Never put private information into shared demo accounts. Seeding does not reset tasks or passwords.
 
-## Develop
-
-Start the API and frontend together with one command:
-
-```sh
-npm run dev
-```
-
-For separate terminals, run `npm run dev:server` and `npm run dev:web` instead.
-
-Vite proxies `/api` to port 3000. View the Vite address for frontend development. For public passport links/QR testing, use the full build on port 3000 or the deployed HTTPS URL; localhost cannot be opened from another phone.
-
-## Deploy for judges
-
-See [DEPLOYMENT.md](docs/DEPLOYMENT.md). The included Render Blueprint creates **one paid service with a persistent disk**. No cloud resource is created by this repository alone.
-
-[Deploy to Render](https://render.com/deploy?repo=https://github.com/nkambuleinnocent52-Ghost/BridgeSkills-SA)
-
-**Do not use ephemeral storage for submission:** accounts and work must survive restarts. Never run multiple app instances with this SQLite setup.
-
-## Test
+## Validate
 
 ```sh
 npm test
 npm run build
 ```
 
-The automated API tests exercise separate accounts, permissions, evidence confirmation and revisions, consent, link revocation, task selection, submissions, change requests, approval, session revocation, input validation and SQLite persistence. [JUDGE_GUIDE.md](docs/JUDGE_GUIDE.md) gives the self-service browser journey.
-
-## Implementation
-
-- Vite + JavaScript frontend; locally hosted fonts.
-- Express API; Node 24's built-in SQLite; schema and migrations initialise on startup.
-- Passwords use salted scrypt; opaque sessions are hashed in the database and sent in HttpOnly cookies, Secure in production.
-- Role and ownership checks run on the server. Cross-origin mutations are rejected; auth endpoints are rate limited.
-- Public passports include only the owner's selected entries, current contact confirmations and consented completed projects. Public sharing is off by default and can be disabled or its link replaced.
-- Content edits create evidence revisions and supersede existing confirmations. Contacts can decline or withdraw their statements.
-- Opportunity matching uses exact skill names from profiles, experience entries and completed projects; the app explains each match. It is not AI assessment or qualifications verification.
-
-## Scope and operating limits
-
-Work samples are **links** to externally hosted work, photos or videos. There is no file-upload service. Confirmation requests appear in the recipient's account; no email/SMS is sent. There is no email verification or password recovery in this hackathon build. Do not use real sensitive information during judging.
-
-Contact statements and business approval are not independently verified identities or competence assessments. The passport is not a qualification or NQF mapping. Payments, USSD, WhatsApp, accredited assessment and course referrals are outside this build.
-
-Reports are stored, not monitored in real time. The deployment owner reviews them from the service shell:
+For a disposable PostgreSQL database, set `TEST_DATABASE_URL` securely and run:
 
 ```sh
-npm run reports
-npm run reports -- REPORT_ID
+npm run test:postgres
 ```
 
-Only trusted operators should access the service shell or database. See [SECURITY.md](docs/SECURITY.md) for submission notes.
+Tests create and remove their own isolated schemas. Do not use a production database for tests. PostgreSQL tests include two independent serverless instances sharing accounts, sessions and work, plus concurrent task selection. CI runs both local and PostgreSQL suites and builds the frontend.
+
+## Implementation and scope
+
+Vite + JavaScript frontend, Express API, `pg` with the Supabase **transaction pooler on port 6543**. Queries use a private `skillbridge` schema and parameterised values. All tables have RLS enabled and are not exposed through Supabase's Data API. The server connects as the database owner; browser users must go through the app's permission checks.
+
+Passwords use salted scrypt; sessions are hashed in the database and sent in HttpOnly, SameSite cookies, Secure in production. Mutations check the origin and complete their transaction before sending success. Database-backed rate limits work across serverless instances. Concurrent updates either commit consistently or return a conflict for the user to refresh.
+
+Evidence edits create revisions and supersede current confirmations. Contacts can decline or withdraw. Public sharing is off by default; only selected evidence and consented completed projects appear. Skills matching uses exact recorded skill names and explains its results.
+
+Work evidence is a link to externally hosted work, photos or videos. There is no upload service, email/SMS delivery, email verification, password recovery or payment handling in this build. No qualifications or NQF levels are issued. Use fictional information during judging.
+
+Reports are stored, not monitored in real time. The trusted project owner can inspect `skillbridge.reports` in Supabase, or run `npm run reports` privately with the database connection configured. `npm run reports -- REPORT_ID` marks a report reviewed. Never publish database exports or report contents.

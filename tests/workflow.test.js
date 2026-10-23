@@ -1,3 +1,4 @@
+import { testStore, reopenTestStore } from "./support/database.js";
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { once } from "node:events";
@@ -9,18 +10,22 @@ import { createApp } from "../server/app.js";
 let store, server, origin, dir;
 before(async () => {
   dir = mkdtempSync(join(tmpdir(), "skillbridge-test-"));
-  store = openStore(join(dir, "test.sqlite"));
-  server = createApp(store, { serveStatic: false, enableLimits: false }).listen(
-    0,
-    "127.0.0.1",
-  );
+  store = await testStore(join(dir, "test.sqlite"));
+  server = createApp(store, {
+    serveStatic: false,
+    enableLimits: false,
+  }).listen(0, "127.0.0.1");
   await once(server, "listening");
   origin = "http://127.0.0.1:" + server.address().port;
 });
 after(async () => {
   await new Promise((resolve) => server.close(resolve));
-  store.close();
-  rmSync(dir, { recursive: true, force: true });
+  if (store.cleanup) await store.cleanup();
+  else await store.close();
+  rmSync(dir, {
+    recursive: true,
+    force: true,
+  });
 });
 function client() {
   let cookie = "";
@@ -33,7 +38,11 @@ function client() {
           "Content-Type": "application/json",
           Cookie: cookie,
         },
-        ...(body ? { body: JSON.stringify(body) } : {}),
+        ...(body
+          ? {
+              body: JSON.stringify(body),
+            }
+          : {}),
       });
       if (res.headers.get("set-cookie"))
         cookie = res.headers.get("set-cookie").split(";")[0];
@@ -52,7 +61,12 @@ async function register(c, email, role = "talent", name = "Test Talent") {
   return c.request(
     "/auth/register",
     "POST",
-    { email, password: "TestingSecure!2026", name, role },
+    {
+      email,
+      password: "TestingSecure!2026",
+      name,
+      role,
+    },
     201,
   );
 }
@@ -102,19 +116,25 @@ test("two-account evidence confirmation, revision invalidation, public consent a
   await talent.request(
     "/evidence/" + eid + "/requests",
     "POST",
-    { email: "passport@example.com" },
+    {
+      email: "passport@example.com",
+    },
     400,
   );
   await talent.request(
     "/evidence/" + eid + "/requests",
     "POST",
-    { email: "missing@example.com" },
+    {
+      email: "missing@example.com",
+    },
     404,
   );
   const { id: cid } = await talent.request(
     "/evidence/" + eid + "/requests",
     "POST",
-    { email: "contact@example.com" },
+    {
+      email: "contact@example.com",
+    },
     201,
   );
   await talent.request(
@@ -151,7 +171,9 @@ test("two-account evidence confirmation, revision invalidation, public consent a
   const token = ownerPassport.url.split("/").at(-1);
   await talent.request("/public/passports/" + token, "GET", null, 404);
   await talent.request("/passport/qr", "GET", null, 409);
-  await talent.request("/passport/sharing", "PUT", { sharePublic: true });
+  await talent.request("/passport/sharing", "PUT", {
+    sharePublic: true,
+  });
   let pub = await stranger.request("/public/passports/" + token);
   assert.equal(pub.evidence.length, 1);
   assert.equal(pub.evidence[0].confirmations.length, 1);
@@ -204,7 +226,9 @@ test("two-account evidence confirmation, revision invalidation, public consent a
   const next = await talent.request(
     "/evidence/" + eid + "/requests",
     "POST",
-    { email: "contact@example.com" },
+    {
+      email: "contact@example.com",
+    },
     201,
   );
   await contact.request("/confirmations/" + next.id + "/respond", "POST", {
@@ -230,14 +254,17 @@ test("two-account evidence confirmation, revision invalidation, public consent a
   );
   assert.ok(report.id);
   assert.equal(
-    store.get("SELECT status FROM reports WHERE id=?", report.id).status,
+    (await store.get("SELECT status FROM reports WHERE id=?", report.id))
+      .status,
     "open",
   );
   await talent.request("/passport/rotate", "POST");
   await stranger.request("/public/passports/" + token, "GET", null, 404);
   const rotated = (await talent.request("/passport")).url.split("/").at(-1);
   assert.notEqual(rotated, token);
-  await talent.request("/passport/sharing", "PUT", { sharePublic: false });
+  await talent.request("/passport/sharing", "PUT", {
+    sharePublic: false,
+  });
   await stranger.request("/public/passports/" + rotated, "GET", null, 404);
   await talent.request("/evidence/" + eid, "DELETE");
   assert.equal((await talent.request("/evidence")).evidence.length, 0);
@@ -290,7 +317,9 @@ test("business and talent complete a task with permission checks, change request
   await talent.request(
     "/tasks/" + tid + "/applications",
     "POST",
-    { pitch: "I have hands-on experience capturing stock in Excel." },
+    {
+      pitch: "I have hands-on experience capturing stock in Excel.",
+    },
     409,
   );
   const other = await otherTalent.request(
@@ -347,7 +376,10 @@ test("business and talent complete a task with permission checks, change request
   await otherBusiness.request(
     "/applications/" + aid + "/review",
     "POST",
-    { action: "approve", feedback: "This meets the agreed project brief." },
+    {
+      action: "approve",
+      feedback: "This meets the agreed project brief.",
+    },
     404,
   );
   await business.request("/applications/" + aid + "/review", "POST", {
@@ -384,7 +416,9 @@ test("business and talent complete a task with permission checks, change request
     (await talent.request("/projects")).projects[0].events.length,
     6,
   );
-  await talent.request("/passport/sharing", "PUT", { sharePublic: true });
+  await talent.request("/passport/sharing", "PUT", {
+    sharePublic: true,
+  });
   const token = (await talent.request("/passport")).url.split("/").at(-1);
   assert.equal(
     (await business.request("/public/passports/" + token)).completed.length,
@@ -400,7 +434,9 @@ test("business and talent complete a task with permission checks, change request
   await otherTalent.request(
     "/applications/" + aid + "/visibility",
     "PUT",
-    { publicConsent: true },
+    {
+      publicConsent: true,
+    },
     404,
   );
 });
@@ -410,7 +446,12 @@ test("authentication, origin protection, input validation, session revocation an
   await c.request(
     "/auth/register",
     "POST",
-    { name: "Test User", role: "talent", email: "bad", password: "short" },
+    {
+      name: "Test User",
+      role: "talent",
+      email: "bad",
+      password: "short",
+    },
     400,
   );
   const registration = await register(c, "security@example.com");
@@ -438,39 +479,60 @@ test("authentication, origin protection, input validation, session revocation an
       "Content-Type": "application/json",
       Cookie: cookie,
     },
-    body: JSON.stringify({ name: "Attacker" }),
+    body: JSON.stringify({
+      name: "Attacker",
+    }),
   });
   assert.equal(foreign.status, 403);
   const noOrigin = await fetch(origin + "/api/auth/logout", {
     method: "POST",
-    headers: { Cookie: cookie },
+    headers: {
+      Cookie: cookie,
+    },
   });
   assert.equal(noOrigin.status, 403);
   await c.request(
     "/evidence",
     "POST",
-    { ...evidenceInput, workUrl: "https://user:password@example.com/private" },
+    {
+      ...evidenceInput,
+      workUrl: "https://user:password@example.com/private",
+    },
     400,
   );
-  await c.request("/passport/sharing", "PUT", { sharePublic: "true" }, 400);
-  const otherConnection = openStore(join(dir, "test.sqlite"));
+  await c.request(
+    "/passport/sharing",
+    "PUT",
+    {
+      sharePublic: "true",
+    },
+    400,
+  );
+  const otherConnection = reopenTestStore(store, join(dir, "test.sqlite"));
   assert.equal(
-    otherConnection.get(
-      "SELECT name FROM users WHERE email=?",
-      "security@example.com",
+    (
+      await otherConnection.get(
+        "SELECT name FROM users WHERE email=?",
+        "security@example.com",
+      )
     ).name,
     "Test Talent",
   );
-  otherConnection.close();
+  await otherConnection.close();
   await c.request("/auth/logout", "POST");
   const replay = await fetch(origin + "/api/projects", {
-    headers: { Cookie: cookie },
+    headers: {
+      Cookie: cookie,
+    },
   });
   assert.equal(replay.status, 401);
   await c.request(
     "/auth/login",
     "POST",
-    { email: "security@example.com", password: "incorrect-password" },
+    {
+      email: "security@example.com",
+      password: "incorrect-password",
+    },
     401,
   );
   await c.request("/auth/login", "POST", {
@@ -513,6 +575,60 @@ test("production sessions use secure cookies and public responses omit private e
     assert.ok(res.headers.get("content-security-policy"));
   } finally {
     await new Promise((resolve) => production.close(resolve));
-    local.close();
+    await local.close();
   }
+});
+
+test("concurrent selection cannot assign two people to the same task", async () => {
+  const business = client(),
+    one = client(),
+    two = client();
+  await register(
+    business,
+    "race-business@example.com",
+    "business",
+    "Concurrent Business",
+  );
+  await register(one, "race-one@example.com");
+  await register(two, "race-two@example.com");
+  const { id: tid } = await business.request(
+    "/tasks",
+    "POST",
+    { ...taskInput, title: "Concurrent selection test task" },
+    201,
+  );
+  const a = await one.request(
+    "/tasks/" + tid + "/applications",
+    "POST",
+    {
+      pitch:
+        "I can deliver this stock capture task with a clear, useful spreadsheet.",
+    },
+    201,
+  );
+  const b = await two.request(
+    "/tasks/" + tid + "/applications",
+    "POST",
+    {
+      pitch:
+        "I have stock capture experience and can produce this spreadsheet.",
+    },
+    201,
+  );
+  const results = await Promise.all(
+    [a, b].map((application) =>
+      fetch(origin + "/api/applications/" + application.id + "/select", {
+        method: "POST",
+        headers: {
+          Origin: origin,
+          Cookie: business.getCookie(),
+          "Content-Type": "application/json",
+        },
+      }),
+    ),
+  );
+  assert.deepEqual(results.map((r) => r.status).sort(), [200, 409]);
+  const records = (await business.request("/projects")).projects;
+  assert.equal(records.filter((r) => r.status === "assigned").length, 1);
+  assert.equal(records.filter((r) => r.status === "not_selected").length, 1);
 });

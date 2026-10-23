@@ -1,4 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import {
@@ -26,7 +27,9 @@ export async function passwordMatches(password, stored) {
 }
 export function openStore(filename) {
   if (filename !== ":memory:")
-    mkdirSync(dirname(resolve(filename)), { recursive: true });
+    mkdirSync(dirname(resolve(filename)), {
+      recursive: true,
+    });
   const db = new DatabaseSync(filename);
   db.exec(`PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;
  CREATE TABLE IF NOT EXISTS users (
@@ -73,38 +76,55 @@ export function openStore(filename) {
  id TEXT PRIMARY KEY, reporter_id TEXT NOT NULL REFERENCES users(id), target_type TEXT NOT NULL CHECK(target_type IN ('task','evidence','passport')),
  target_id TEXT NOT NULL, reason TEXT NOT NULL, created_at TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'open'
  );
+ CREATE TABLE IF NOT EXISTS rate_limits (key TEXT PRIMARY KEY,hits INTEGER NOT NULL,window_end BIGINT NOT NULL);
  CREATE INDEX IF NOT EXISTS confirmation_receiver ON confirmations(receiver_id);
  CREATE INDEX IF NOT EXISTS application_talent ON applications(talent_id);
  CREATE INDEX IF NOT EXISTS evidence_talent ON evidence(talent_id);
  INSERT OR IGNORE INTO evidence_versions(evidence_id,revision,title,organisation,description,skills,work_url,period,created_at)
  SELECT id,revision,title,organisation,description,skills,work_url,period,updated_at FROM evidence;
  PRAGMA user_version=2;`);
-  return {
-    db,
+  const context = new AsyncLocalStorage();
+  let tail = Promise.resolve();
+  const exclusive = (fn) => {
+    const pending = tail.then(fn);
+    tail = pending.catch(() => {});
+    return pending;
+  };
+  let store;
+  const execute = (fn) =>
+    context.getStore() === store ? Promise.resolve().then(fn) : exclusive(fn);
+  store = {
+    kind: "sqlite",
     get(sql, ...params) {
-      return db.prepare(sql).get(...params);
+      return execute(() => db.prepare(sql).get(...params));
     },
     all(sql, ...params) {
-      return db.prepare(sql).all(...params);
+      return execute(() => db.prepare(sql).all(...params));
     },
     run(sql, ...params) {
-      return db.prepare(sql).run(...params);
+      return execute(() => db.prepare(sql).run(...params));
     },
     transaction(fn) {
-      db.exec("BEGIN IMMEDIATE");
-      try {
-        const result = fn();
-        db.exec("COMMIT");
-        return result;
-      } catch (e) {
-        db.exec("ROLLBACK");
-        throw e;
-      }
+      if (context.getStore() === store) return fn();
+      return exclusive(() =>
+        context.run(store, async () => {
+          db.exec("BEGIN IMMEDIATE");
+          try {
+            const result = await fn();
+            db.exec("COMMIT");
+            return result;
+          } catch (error) {
+            db.exec("ROLLBACK");
+            throw error;
+          }
+        }),
+      );
     },
     close() {
-      db.close();
+      return exclusive(() => db.close());
     },
   };
+  return store;
 }
 export function publicUser(u) {
   if (!u) return null;
@@ -145,8 +165,8 @@ export async function seedDemo(store) {
     ],
   ];
   for (const [email, password, name, role, skills] of accounts) {
-    if (!store.get("SELECT id FROM users WHERE email=?", email))
-      store.run(
+    if (!(await store.get("SELECT id FROM users WHERE email=?", email)))
+      await store.run(
         "INSERT INTO users(id,email,password_hash,name,role,headline,location,bio,skills,passport_token,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
         id(),
         email,
@@ -163,7 +183,7 @@ export async function seedDemo(store) {
         now(),
       );
   }
-  const owner = store.get(
+  const owner = await store.get(
     "SELECT id FROM users WHERE email=?",
     "business@skillbridge.demo",
   );
@@ -224,11 +244,11 @@ export async function seedDemo(store) {
     skills,
   ] of demos) {
     const taskId = `demo-${key}`;
-    if (!store.get("SELECT id FROM tasks WHERE id=?", taskId)) {
+    if (!(await store.get("SELECT id FROM tasks WHERE id=?", taskId))) {
       const deadline = new Date(Date.now() + days * 86400000)
         .toISOString()
         .slice(0, 10);
-      store.run(
+      await store.run(
         "INSERT INTO tasks(id,business_id,title,description,category,skills,budget,deadline,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
         taskId,
         owner.id,

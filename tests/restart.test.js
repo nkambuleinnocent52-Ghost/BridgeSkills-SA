@@ -1,3 +1,4 @@
+import { testStore } from "./support/database.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -9,6 +10,7 @@ import { tmpdir } from "node:os";
 test("accounts, evidence and login sessions survive a full server process restart", async () => {
   const directory = mkdtempSync(join(tmpdir(), "skillbridge-restart-"));
   const database = join(directory, "app.sqlite");
+  const backing = await testStore(database);
   async function launch() {
     const child = spawn(process.execPath, ["server/index.js"], {
       cwd: process.cwd(),
@@ -17,6 +19,11 @@ test("accounts, evidence and login sessions survive a full server process restar
         NODE_ENV: "test",
         APP_BASE_URL: "",
         RENDER_EXTERNAL_URL: "",
+        VERCEL: "",
+        VERCEL_URL: "",
+        VERCEL_PROJECT_PRODUCTION_URL: "",
+        DATABASE_URL: process.env.TEST_DATABASE_URL || "",
+        DATABASE_SCHEMA: backing.schema || "",
         DATABASE_PATH: database,
         PORT: "0",
         SEED_DEMO: "false",
@@ -107,6 +114,8 @@ test("accounts, evidence and login sessions survive a full server process restar
     assert.equal(health.status, 200);
   } finally {
     if (runtime) await runtime.stop();
+    if (backing.cleanup) await backing.cleanup();
+    else await backing.close();
     rmSync(directory, { recursive: true, force: true });
   }
 });
