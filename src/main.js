@@ -1,5 +1,6 @@
 import { defaultView, navigationFor, resolveView } from "./role-navigation.js";
 import "./style.css";
+import "./gold-theme.css";
 const app = document.querySelector("#app");
 let user = null,
   tasks = [],
@@ -124,6 +125,26 @@ function toast(message) {
 function header(title, subtitle, eyebrow = "YOUR NEXT CHAPTER") {
   return `<section class="page-heading"><div><div class="eyebrow">${eyebrow}</div><h1>${title}<span>.</span></h1><p>${subtitle}</p></div></section>`;
 }
+function navIcon(view) {
+  const paths = {
+    dashboard:
+      '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
+    discover:
+      '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5M8 10.5h5m-2.5-2.5v5"/>',
+    projects:
+      '<rect x="3" y="7" width="18" height="14" rx="2"/><path d="M8 7V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v3M3 12a23 23 0 0 0 18 0M10 12v3h4v-3"/>',
+    tasks:
+      '<rect x="5" y="4" width="15" height="18" rx="2"/><rect x="9" y="2" width="7" height="4" rx="1"/><path d="M9 11h7m-7 4h7m-7 4h4"/>',
+    applicants:
+      '<circle cx="9" cy="8" r="3.5"/><path d="M2 21v-2a7 7 0 0 1 14 0v2M16 5a3.5 3.5 0 0 1 0 7m3 9v-2a8 8 0 0 0-2-5"/>',
+    passport:
+      '<rect x="4" y="2" width="16" height="20" rx="2"/><circle cx="12" cy="8" r="2"/><path d="M8 15a4 4 0 0 1 8 0m-8 4h8"/>',
+    confirmations: '<circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/>',
+    profile:
+      '<circle cx="12" cy="8" r="4"/><path d="M4 22v-2a8 8 0 0 1 16 0v2"/>',
+  };
+  return `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[view] || paths.dashboard}</svg>`;
+}
 function navItems() {
   return navigationFor(user?.role);
 }
@@ -145,7 +166,7 @@ function shell(content) {
   return `<aside class="sidebar"><a class="brand" href="#${defaultView(user?.role)}"><span class="brand-icon">s<span>↗</span></span><span>skillbridge<span class="sa">SA</span></span></a><div class="workspace-label">${user?.role === "business" ? "BUSINESS WORKSPACE" : "YOUR WORKSPACE"}</div><nav>${navItems()
     .map(
       ([v, icon, title]) =>
-        `<button data-view="${v}" class="nav-item ${view === v ? "active" : ""}"><span>${icon}</span>${title}</button>`,
+        `<button data-view="${v}" class="nav-item ${view === v ? "active" : ""}"><span>${navIcon(v)}</span>${title}</button>`,
     )
     .join(
       "",
@@ -193,7 +214,7 @@ function gate() {
   return `${header("Your next chapter starts here", "Create an account to build your passport, apply for opportunities, or post a business task.")}<section class="empty"><span>↗</span><h2>Bring your skills. Build your proof.</h2><p>Talent and businesses use separate accounts. Your work and confirmations are stored securely on the server.</p><button class="button primary" data-auth="register">Create an account ↗</button><button class="button secondary" data-auth="login">I already have an account</button></section>`;
 }
 function discover() {
-  return `<section class="page-heading"><div><div class="eyebrow">REAL SKILLS. REAL POSSIBILITIES.</div><h1>Your next opportunity starts here<span>.</span></h1><p>Put your skills to work. Build experience you can show.</p></div>${!user ? '<button class="button secondary" id="post-task">Hire local talent ↗</button>' : '<button class="button secondary" data-view="passport">My skills passport ↗</button>'}</section><section class="hero"><div class="hero-copy"><div class="hero-badge">✦ MORE THAN A CV. PROOF OF YOUR POTENTIAL.</div><h2>A little skill.<br>A world of <em>possibility.</em></h2><p>Start with what you know. Complete a real project.<br class="desktop"/> Carry the evidence into your next opportunity.</p><button class="button dark" id="explore">Find your opportunity <span>↗</span></button><div class="hero-note">✦ Your experience counts. Let’s make it visible.</div></div><div class="hero-art" aria-hidden="true"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><span class="art-star star-one">✳</span><span class="art-star star-two">✧</span><div class="floating-label label-one">✦ Your next chapter</div><div class="art-window"><div class="window-bar"><span>● ● ●</span><span>YOUR SKILLS PASSPORT ↗</span></div><div class="window-body"><div class="art-sun">✳</div><span class="art-cursor">➤</span><div class="window-line"></div><div class="window-line short"></div><span class="art-pill">Made of potential.</span></div></div><div class="floating-label label-two"><span>✓</span><div>Skills → experience<strong>Proof you can carry.</strong></div><span>↗</span></div></div></section><section class="quick-stats"><div><span class="stat-icon peach">↗</span><div><strong>${tasks.length} open opportunities</strong><small>Find a practical first step</small></div></div><div><span class="stat-icon sage">▤</span><div><strong>Experience that counts</strong><small>Past work and completed projects</small></div></div><div><span class="stat-icon lilac">◈</span><div><strong>Your skills passport</strong><small>Share the evidence you choose</small></div></div></section><section id="opportunities"><div class="section-heading"><div><h2>Find your next opportunity <span>↗</span></h2><p>Digital services and everyday small-business support.</p></div></div><div class="search-row"><label class="search-box"><span>⌕</span><input id="search" value="${esc(query)}" aria-label="Search opportunities" placeholder="Try “Canva”, “customer service” or “stock”…"/><kbd>⌘ K</kbd></label><select id="sort" aria-label="Sort opportunities"><option value="match" ${sort === "match" ? "selected" : ""}>Best skill matches</option><option value="budget" ${sort === "budget" ? "selected" : ""}>Highest budget first</option><option value="deadline" ${sort === "deadline" ? "selected" : ""}>Earliest deadline first</option></select></div><div class="categories">${["All opportunities", ...categories].map((c, i) => `<button data-category="${esc(c)}" class="${category === c ? "active" : ""}">${["✦", "◈", "⌘", "◎", "✎", "▤"][i]} ${esc(c)}</button>`).join("")}</div><div id="task-results">${taskResults()}</div></section><section class="bottom-banner"><span>✳</span><div><h3>Experience shouldn’t disappear when the work is done.</h3><p>Build a passport with your past work, confirmations and completed projects.</p></div><button class="button secondary" data-view="${user?.role === "business" ? "tasks" : "passport"}">${user?.role === "business" ? "Manage tasks" : "Build my passport"} ↗</button></section>`;
+  return `<section class="page-heading"><div><div class="eyebrow">REAL SKILLS. REAL POSSIBILITIES.</div><h1>Your next opportunity starts here<span>.</span></h1><p>Put your skills to work. Build experience you can show.</p></div>${!user ? '<button class="button secondary" id="post-task">Hire local talent ↗</button>' : '<button class="button secondary" data-view="passport">My skills passport ↗</button>'}</section><section class="hero"><div class="hero-copy"><div class="hero-badge">✦ MORE THAN A CV. PROOF OF YOUR POTENTIAL.</div><h2>A little skill.<br>A world of <em>possibility.</em></h2><p>Start with what you know. Complete a real project.<br class="desktop"/> Carry the evidence into your next opportunity.</p><button class="button dark" id="explore">Find your opportunity <span>↗</span></button><div class="hero-note">✦ Your experience counts. Let’s make it visible.</div></div><div class="hero-art" aria-hidden="true"><div class="gold-signal"><span>✦</span><div>YOUR NEXT CHAPTER<strong>Built on what you can do.</strong></div></div></div></section><section class="quick-stats"><div><span class="stat-icon peach">↗</span><div><strong>${tasks.length} open opportunities</strong><small>Find a practical first step</small></div></div><div><span class="stat-icon sage">▤</span><div><strong>Experience that counts</strong><small>Past work and completed projects</small></div></div><div><span class="stat-icon lilac">◈</span><div><strong>Your skills passport</strong><small>Share the evidence you choose</small></div></div></section><section id="opportunities"><div class="section-heading"><div><h2>Find your next opportunity <span>↗</span></h2><p>Digital services and everyday small-business support.</p></div></div><div class="search-row"><label class="search-box"><span>⌕</span><input id="search" value="${esc(query)}" aria-label="Search opportunities" placeholder="Try “Canva”, “customer service” or “stock”…"/><kbd>⌘ K</kbd></label><select id="sort" aria-label="Sort opportunities"><option value="match" ${sort === "match" ? "selected" : ""}>Best skill matches</option><option value="budget" ${sort === "budget" ? "selected" : ""}>Highest budget first</option><option value="deadline" ${sort === "deadline" ? "selected" : ""}>Earliest deadline first</option></select></div><div class="categories">${["All opportunities", ...categories].map((c, i) => `<button data-category="${esc(c)}" class="${category === c ? "active" : ""}">${["✦", "◈", "⌘", "◎", "✎", "▤"][i]} ${esc(c)}</button>`).join("")}</div><div id="task-results">${taskResults()}</div></section><section class="bottom-banner"><span>✳</span><div><h3>Experience shouldn’t disappear when the work is done.</h3><p>Build a passport with your past work, confirmations and completed projects.</p></div><button class="button secondary" data-view="${user?.role === "business" ? "tasks" : "passport"}">${user?.role === "business" ? "Manage tasks" : "Build my passport"} ↗</button></section>`;
 }
 function taskResults() {
   let list = tasks.filter(
@@ -253,7 +274,7 @@ function businessDashboard() {
     ).length;
   const attention = [...needsReview, ...newApplicants].slice(0, 4);
   return `${header(`Welcome back, ${esc(user.name)}`, "Your tasks, your applicants and the next steps that need you.", "YOUR BUSINESS OVERVIEW")}
- <section class="business-hero"><div><span class="business-eyebrow">SMALL BUSINESS. SHARED POSSIBILITIES.</span><h2>Find the talent.<br/>Make things happen.</h2><p>Turn something on your to-do list into someone’s next opportunity.</p><button class="button primary" data-post-task>Post a paid task <span>＋</span></button></div><div class="business-hero-art" aria-hidden="true"><span class="business-art-star">✳</span><div class="business-brief"><div>YOUR NEXT PROJECT <span>↗</span></div><strong>A clear brief.<br/>A fresh perspective.</strong><span class="brief-line"></span><span class="brief-line short"></span><span class="brief-tag">Built together. ✓</span></div></div></section>
+ <section class="business-hero"><div><span class="business-eyebrow">SMALL BUSINESS. SHARED POSSIBILITIES.</span><h2>Find the talent.<br/>Make things happen.</h2><p>Turn something on your to-do list into someone’s next opportunity.</p><button class="button primary" data-post-task>Post a paid task <span>＋</span></button></div><div class="business-hero-art" aria-hidden="true"><div class="gold-signal"><span>↗</span><div>GOOD WORK. SHARED GROWTH.<strong>Great things start together.</strong></div></div></div></section>
  <section class="business-stats" aria-label="Your business activity">${[
    ["tasks", m.open, "Open tasks", "Ready for applicants", "▤"],
    [
