@@ -1,3 +1,4 @@
+import { defaultView, navigationFor, resolveView } from "./role-navigation.js";
 import "./style.css";
 const app = document.querySelector("#app");
 let user = null,
@@ -14,6 +15,8 @@ let user = null,
   evidence = [],
   confirmations = [],
   passport = null;
+let businessTaskFilter = "all",
+  businessStatusFilter = "all";
 let view = location.hash.slice(1) || "discover",
   query = "",
   category = "All opportunities",
@@ -122,29 +125,31 @@ function header(title, subtitle, eyebrow = "YOUR NEXT CHAPTER") {
   return `<section class="page-heading"><div><div class="eyebrow">${eyebrow}</div><h1>${title}<span>.</span></h1><p>${subtitle}</p></div></section>`;
 }
 function navItems() {
-  return [
-    ["discover", "▦", "Opportunities"],
-    [
-      "projects",
-      "▣",
-      user?.role === "business" ? "Business tasks" : "My projects",
-    ],
-    ["passport", "◈", "Skills passport"],
-    ["confirmations", "✓", "Confirmations"],
-    ["profile", "◯", "My profile"],
-  ].filter(([v]) => v !== "passport" || user?.role !== "business");
+  return navigationFor(user?.role);
+}
+function resetWorkspace() {
+  tasks = [];
+  projects = [];
+  ownedTasks = [];
+  evidence = [];
+  confirmations = [];
+  passport = null;
+  businessTaskFilter = "all";
+  businessStatusFilter = "all";
+  query = "";
+  category = "All opportunities";
 }
 function shell(content) {
   if (publicToken)
     return `<div class="public-shell"><div class="public-header"><a class="brand" href="/"><span class="brand-icon">s<span>↗</span></span><span>skillbridge<span class="sa">SA</span></span></a><a class="button secondary" href="/">Explore opportunities ↗</a></div><main>${content}</main><footer>SkillBridge SA · Evidence of work. A bridge to what’s next.</footer><div id="modal-root"></div></div>`;
-  return `<aside class="sidebar"><a class="brand" href="#discover"><span class="brand-icon">s<span>↗</span></span><span>skillbridge<span class="sa">SA</span></span></a><div class="workspace-label">YOUR WORKSPACE</div><nav>${navItems()
+  return `<aside class="sidebar"><a class="brand" href="#${defaultView(user?.role)}"><span class="brand-icon">s<span>↗</span></span><span>skillbridge<span class="sa">SA</span></span></a><div class="workspace-label">${user?.role === "business" ? "BUSINESS WORKSPACE" : "YOUR WORKSPACE"}</div><nav>${navItems()
     .map(
       ([v, icon, title]) =>
         `<button data-view="${v}" class="nav-item ${view === v ? "active" : ""}"><span>${icon}</span>${title}</button>`,
     )
     .join(
       "",
-    )}</nav><div class="sidebar-bottom"><div class="grow-card"><span class="grow-icon">✧</span><h3>Your experience counts.</h3><p>Document what you can do. Build proof with every project.</p><button data-view="${user?.role === "business" ? "projects" : "passport"}">${user?.role === "business" ? "Find your next collaborator" : "Build your skills passport"} <span>↗</span></button></div><button class="help" id="help">ⓘ <span>How it works</span> ↗</button>${user ? `<button class="user" data-view="profile"><span class="avatar">${esc(initials(user.name))}</span><span><strong>${esc(user.name)}</strong><small>${user.role === "talent" ? "Talent" : "Business"} account</small></span><span>⌄</span></button>` : '<button class="button dark sign-in-sidebar" data-auth="login">Sign in ↗</button>'}</div></aside><div class="main-shell"><header><div class="breadcrumb">Your workspace <span>/</span><strong>${esc(navItems().find((x) => x[0] === view)?.[2] || "Opportunities")}</strong></div><div class="header-actions"><span class="demo"><i></i> Hackathon MVP</span>${user ? `<button class="text-button" id="logout">Sign out</button><button class="avatar small" data-view="profile" aria-label="My profile">${esc(initials(user.name))}</button>` : '<button class="button secondary" data-auth="login">Sign in</button><button class="button primary" data-auth="register">Get started ↗</button>'}</div></header><main>${content}</main><footer><span>Built for South African talent and small businesses.</span><span>Evidence of work. A bridge to what’s next. <b>✳</b></span></footer></div><div id="modal-root"></div>`;
+    )}</nav><div class="sidebar-bottom"><div class="grow-card"><span class="grow-icon">✧</span><h3>${user?.role === "business" ? "Good work starts with you." : "Your experience counts."}</h3><p>${user?.role === "business" ? "Post a clear brief. Find talent. Build something together." : "Document what you can do. Build proof with every project."}</p><button data-view="${user?.role === "business" ? "tasks" : "passport"}">${user?.role === "business" ? "Manage your tasks" : "Build your skills passport"} <span>↗</span></button></div><button class="help" id="help">ⓘ <span>How it works</span> ↗</button>${user ? `<button class="user" data-view="profile"><span class="avatar">${esc(initials(user.name))}</span><span><strong>${esc(user.name)}</strong><small>${user.role === "talent" ? "Young person" : "Business"} account</small></span><span>⌄</span></button>` : '<button class="button dark sign-in-sidebar" data-auth="login">Sign in ↗</button>'}</div></aside><div class="main-shell"><header><div class="breadcrumb">${user?.role === "business" ? "Business workspace" : "Your workspace"} <span>/</span><strong>${esc(navItems().find((x) => x[0] === view)?.[2] || "Opportunities")}</strong></div><div class="header-actions"><span class="demo"><i></i> Hackathon MVP</span>${user ? `<button class="text-button" id="logout">Sign out</button><button class="avatar small" data-view="profile" aria-label="My profile">${esc(initials(user.name))}</button>` : '<button class="button secondary" data-auth="login">Sign in</button><button class="button primary" data-auth="register">Get started ↗</button>'}</div></header><main>${content}</main><footer><span>Built for South African talent and small businesses.</span><span>Evidence of work. A bridge to what’s next. <b>✳</b></span></footer></div><div id="modal-root"></div>`;
 }
 function render() {
   let content;
@@ -155,7 +160,20 @@ function render() {
           "Passport unavailable",
           "This passport is private, unavailable, or its share link has changed.",
         );
-  else
+  else if (user?.role === "business") {
+    content =
+      view === "dashboard"
+        ? businessDashboard()
+        : view === "tasks"
+          ? businessTasksPage()
+          : view === "applicants"
+            ? businessApplicantsPage()
+            : view === "projects"
+              ? businessWorkPage()
+              : view === "confirmations"
+                ? confirmationPage()
+                : profilePage();
+  } else
     content =
       view === "discover"
         ? discover()
@@ -163,7 +181,7 @@ function render() {
           ? gate()
           : view === "projects"
             ? projectPage()
-            : view === "passport" && user.role === "talent"
+            : view === "passport"
               ? passportPage()
               : view === "confirmations"
                 ? confirmationPage()
@@ -175,7 +193,7 @@ function gate() {
   return `${header("Your next chapter starts here", "Create an account to build your passport, apply for opportunities, or post a business task.")}<section class="empty"><span>↗</span><h2>Bring your skills. Build your proof.</h2><p>Talent and businesses use separate accounts. Your work and confirmations are stored securely on the server.</p><button class="button primary" data-auth="register">Create an account ↗</button><button class="button secondary" data-auth="login">I already have an account</button></section>`;
 }
 function discover() {
-  return `<section class="page-heading"><div><div class="eyebrow">REAL SKILLS. REAL POSSIBILITIES.</div><h1>Your next opportunity starts here<span>.</span></h1><p>Put your skills to work. Build experience you can show.</p></div><button class="button secondary" id="post-task">Post a task ＋</button></section><section class="hero"><div class="hero-copy"><div class="hero-badge">✦ MORE THAN A CV. PROOF OF YOUR POTENTIAL.</div><h2>A little skill.<br>A world of <em>possibility.</em></h2><p>Start with what you know. Complete a real project.<br class="desktop"/> Carry the evidence into your next opportunity.</p><button class="button dark" id="explore">Find your opportunity <span>↗</span></button><div class="hero-note">✦ Your experience counts. Let’s make it visible.</div></div><div class="hero-art" aria-hidden="true"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><span class="art-star star-one">✳</span><span class="art-star star-two">✧</span><div class="floating-label label-one">✦ Your next chapter</div><div class="art-window"><div class="window-bar"><span>● ● ●</span><span>YOUR SKILLS PASSPORT ↗</span></div><div class="window-body"><div class="art-sun">✳</div><span class="art-cursor">➤</span><div class="window-line"></div><div class="window-line short"></div><span class="art-pill">Made of potential.</span></div></div><div class="floating-label label-two"><span>✓</span><div>Skills → experience<strong>Proof you can carry.</strong></div><span>↗</span></div></div></section><section class="quick-stats"><div><span class="stat-icon peach">↗</span><div><strong>${tasks.length} open opportunities</strong><small>Find a practical first step</small></div></div><div><span class="stat-icon sage">▤</span><div><strong>Experience that counts</strong><small>Past work and completed projects</small></div></div><div><span class="stat-icon lilac">◈</span><div><strong>Your skills passport</strong><small>Share the evidence you choose</small></div></div></section><section id="opportunities"><div class="section-heading"><div><h2>Find your next opportunity <span>↗</span></h2><p>Digital services and everyday small-business support.</p></div></div><div class="search-row"><label class="search-box"><span>⌕</span><input id="search" value="${esc(query)}" aria-label="Search opportunities" placeholder="Try “Canva”, “customer service” or “stock”…"/><kbd>⌘ K</kbd></label><select id="sort" aria-label="Sort opportunities"><option value="match" ${sort === "match" ? "selected" : ""}>Best skill matches</option><option value="budget" ${sort === "budget" ? "selected" : ""}>Highest budget first</option><option value="deadline" ${sort === "deadline" ? "selected" : ""}>Earliest deadline first</option></select></div><div class="categories">${["All opportunities", ...categories].map((c, i) => `<button data-category="${esc(c)}" class="${category === c ? "active" : ""}">${["✦", "◈", "⌘", "◎", "✎", "▤"][i]} ${esc(c)}</button>`).join("")}</div><div id="task-results">${taskResults()}</div></section><section class="bottom-banner"><span>✳</span><div><h3>Experience shouldn’t disappear when the work is done.</h3><p>Build a passport with your past work, confirmations and completed projects.</p></div><button class="button secondary" data-view="${user?.role === "business" ? "projects" : "passport"}">${user?.role === "business" ? "Manage tasks" : "Build my passport"} ↗</button></section>`;
+  return `<section class="page-heading"><div><div class="eyebrow">REAL SKILLS. REAL POSSIBILITIES.</div><h1>Your next opportunity starts here<span>.</span></h1><p>Put your skills to work. Build experience you can show.</p></div>${!user ? '<button class="button secondary" id="post-task">Hire local talent ↗</button>' : '<button class="button secondary" data-view="passport">My skills passport ↗</button>'}</section><section class="hero"><div class="hero-copy"><div class="hero-badge">✦ MORE THAN A CV. PROOF OF YOUR POTENTIAL.</div><h2>A little skill.<br>A world of <em>possibility.</em></h2><p>Start with what you know. Complete a real project.<br class="desktop"/> Carry the evidence into your next opportunity.</p><button class="button dark" id="explore">Find your opportunity <span>↗</span></button><div class="hero-note">✦ Your experience counts. Let’s make it visible.</div></div><div class="hero-art" aria-hidden="true"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><span class="art-star star-one">✳</span><span class="art-star star-two">✧</span><div class="floating-label label-one">✦ Your next chapter</div><div class="art-window"><div class="window-bar"><span>● ● ●</span><span>YOUR SKILLS PASSPORT ↗</span></div><div class="window-body"><div class="art-sun">✳</div><span class="art-cursor">➤</span><div class="window-line"></div><div class="window-line short"></div><span class="art-pill">Made of potential.</span></div></div><div class="floating-label label-two"><span>✓</span><div>Skills → experience<strong>Proof you can carry.</strong></div><span>↗</span></div></div></section><section class="quick-stats"><div><span class="stat-icon peach">↗</span><div><strong>${tasks.length} open opportunities</strong><small>Find a practical first step</small></div></div><div><span class="stat-icon sage">▤</span><div><strong>Experience that counts</strong><small>Past work and completed projects</small></div></div><div><span class="stat-icon lilac">◈</span><div><strong>Your skills passport</strong><small>Share the evidence you choose</small></div></div></section><section id="opportunities"><div class="section-heading"><div><h2>Find your next opportunity <span>↗</span></h2><p>Digital services and everyday small-business support.</p></div></div><div class="search-row"><label class="search-box"><span>⌕</span><input id="search" value="${esc(query)}" aria-label="Search opportunities" placeholder="Try “Canva”, “customer service” or “stock”…"/><kbd>⌘ K</kbd></label><select id="sort" aria-label="Sort opportunities"><option value="match" ${sort === "match" ? "selected" : ""}>Best skill matches</option><option value="budget" ${sort === "budget" ? "selected" : ""}>Highest budget first</option><option value="deadline" ${sort === "deadline" ? "selected" : ""}>Earliest deadline first</option></select></div><div class="categories">${["All opportunities", ...categories].map((c, i) => `<button data-category="${esc(c)}" class="${category === c ? "active" : ""}">${["✦", "◈", "⌘", "◎", "✎", "▤"][i]} ${esc(c)}</button>`).join("")}</div><div id="task-results">${taskResults()}</div></section><section class="bottom-banner"><span>✳</span><div><h3>Experience shouldn’t disappear when the work is done.</h3><p>Build a passport with your past work, confirmations and completed projects.</p></div><button class="button secondary" data-view="${user?.role === "business" ? "tasks" : "passport"}">${user?.role === "business" ? "Manage tasks" : "Build my passport"} ↗</button></section>`;
 }
 function taskResults() {
   let list = tasks.filter(
@@ -194,8 +212,145 @@ function taskResults() {
 function taskCard(t) {
   return `<article class="task-card"><div class="card-top"><span class="company-logo ${t.isDemo ? "coffee" : "green"}">${esc(initials(t.business_name))}</span><div class="company-info"><strong>${esc(t.business_name)}</strong><span>${esc(t.location || "South Africa")} · Remote friendly</span></div></div><div class="card-category">${esc(t.category)}${t.isDemo ? "<span>Fictional demo task</span>" : ""}</div><button class="card-title" data-task="${esc(t.id)}">${esc(t.title)}</button><p>${esc(t.description)}</p>${tags(t.skills)}<div class="match-reason ${t.matchedSkills.length ? "has-match" : ""}">✦ ${esc(t.matchReason)}</div><div class="card-meta"><div><strong>${money(t.budget)}</strong><span>Agreed project budget</span></div><div class="deadline">◷ <span>Due ${date(t.deadline)}</span></div></div><div class="card-footer"><span>${t.applicants} ${t.applicants === 1 ? "applicant" : "applicants"}</span><button data-task="${esc(t.id)}">View task <span>↗</span></button></div></article>`;
 }
+function helpContent() {
+  const steps =
+    user?.role === "business"
+      ? [
+          "Post a paid task with a clear brief, budget and deadline.",
+          "Open Applicants to read applications and any shared skills passports.",
+          "Select one applicant. Track progress in Active work.",
+          "Review submitted work, request changes or approve completion.",
+        ]
+      : [
+          "Create your profile and record your skills.",
+          "Add previous experience and request confirmation from another account.",
+          "Apply for a task. Once selected, submit your work for business review.",
+          "Choose which experience and completed projects to share in your skills passport.",
+        ];
+  return `<ol class="help-list">${steps.map((step) => `<li>${step}</li>`).join("")}</ol><div class="notice">Contact confirmations are not independent assessments. Payments are arranged directly between participants.</div>`;
+}
+function businessMetrics() {
+  return {
+    open: ownedTasks.filter(
+      (t) =>
+        t.status === "open" &&
+        t.deadline >= new Date().toISOString().slice(0, 10),
+    ).length,
+    applicants: projects.filter((p) => p.status === "applied").length,
+    review: projects.filter((p) => p.status === "submitted").length,
+    active: projects.filter((p) =>
+      ["assigned", "changes_requested"].includes(p.status),
+    ).length,
+    complete: projects.filter((p) => p.status === "completed").length,
+  };
+}
+function businessDashboard() {
+  const m = businessMetrics(),
+    needsReview = projects.filter((p) => p.status === "submitted"),
+    newApplicants = projects.filter((p) => p.status === "applied"),
+    referenceCount = confirmations.filter(
+      (c) => c.status === "requested",
+    ).length;
+  const attention = [...needsReview, ...newApplicants].slice(0, 4);
+  return `${header(`Welcome back, ${esc(user.name)}`, "Your tasks, your applicants and the next steps that need you.", "YOUR BUSINESS OVERVIEW")}
+ <section class="business-hero"><div><span class="business-eyebrow">SMALL BUSINESS. SHARED POSSIBILITIES.</span><h2>Find the talent.<br/>Make things happen.</h2><p>Turn something on your to-do list into someone’s next opportunity.</p><button class="button primary" data-post-task>Post a paid task <span>＋</span></button></div><div class="business-hero-art" aria-hidden="true"><span class="business-art-star">✳</span><div class="business-brief"><div>YOUR NEXT PROJECT <span>↗</span></div><strong>A clear brief.<br/>A fresh perspective.</strong><span class="brief-line"></span><span class="brief-line short"></span><span class="brief-tag">Built together. ✓</span></div></div></section>
+ <section class="business-stats" aria-label="Your business activity">${[
+   ["tasks", m.open, "Open tasks", "Ready for applicants", "▤"],
+   [
+     "applicants",
+     m.applicants,
+     "New applications",
+     "Find your next collaborator",
+     "◯",
+   ],
+   ["projects", m.active, "Work in progress", "Selected talent at work", "↗"],
+   ["projects", m.review, "Awaiting review", "Give work its next step", "✓"],
+ ]
+   .map(
+     ([v, n, title, note, icon]) =>
+       `<button data-view="${v}" class="business-stat ${title === "Awaiting review" && n ? "attention" : ""}"><span>${icon}</span><strong>${n}</strong><h3>${title}</h3><small>${note}</small></button>`,
+   )
+   .join("")}</section>
+ <div class="business-columns"><section><div class="section-heading"><div><h2>Your next actions</h2><p>Keep good work moving forward.</p></div><button class="text-button" data-refresh-workspace>Refresh ↻</button></div><div class="business-action-list">${attention.length ? attention.map((a) => `<button class="business-action" data-project="${esc(a.id)}"><span class="action-symbol ${a.status === "submitted" ? "review" : "application"}">${a.status === "submitted" ? "✓" : "◯"}</span><span><strong>${a.status === "submitted" ? "Review a submission" : "Review an application"}</strong><small>${esc(a.talent_name)} · ${esc(a.title)}</small></span><span>↗</span></button>`).join("") : `<div class="business-clear"><span>✧</span><h3>You’re all caught up.</h3><p>${ownedTasks.length ? "New applications and work ready for review will appear here." : "Post your first paid task to start working with local talent."}</p></div>`}</div></section>
+ <aside class="business-context"><span>YOUR BUSINESS</span><h3>${esc(user.name)}</h3><p>${esc(user.location || "Add your business location")}</p><p>${esc(user.headline || "A clear business profile helps applicants understand who they’ll work with.")}</p><button class="text-button" data-view="profile">Edit business profile ↗</button><div class="context-divider"></div><button class="business-reference" data-view="confirmations"><span>Confirm past experience</span><b>${referenceCount}</b><small>${referenceCount ? "Someone has asked you for a reference." : "Respond to experience requests from people you know."}</small></button></aside></div>
+ <section class="spaced"><div class="section-heading"><div><h2>Your recent tasks</h2><p>${ownedTasks.length} posted · ${m.complete} completed through SkillBridge</p></div><button class="text-button" data-view="tasks">View all tasks ↗</button></div>${ownedTasks.length ? `<div class="business-task-grid">${ownedTasks.slice(0, 3).map(businessTaskCard).join("")}</div>` : businessEmpty("Your first brief is a fresh beginning.", "Describe what you need, set a budget and give someone a chance to show what they can do.", "post")}</section>`;
+}
+function businessEmpty(title, description, action = "post") {
+  return `<section class="empty business-empty"><span>${action === "post" ? "＋" : "✧"}</span><h2>${title}</h2><p>${description}</p>${action === "post" ? '<button class="button primary" data-post-task>Post a paid task ＋</button>' : '<button class="button secondary" data-view="tasks">View my tasks ↗</button>'}</section>`;
+}
+function businessTaskCard(t) {
+  const current = projects.filter((p) => p.task_id === t.id),
+    pending = current.filter((p) => p.status === "applied").length,
+    submitted = current.some((p) => p.status === "submitted"),
+    past =
+      t.status === "open" && t.deadline < new Date().toISOString().slice(0, 10);
+  return `<article class="business-task-card"><div class="business-task-top"><span>${esc(t.category)}</span>${past ? '<span class="status-badge">Deadline passed</span>' : status(t.status)}</div><h3>${esc(t.title)}</h3><p>${esc(t.description)}</p>${tags(t.skills)}<div class="business-task-budget"><strong>${money(t.budget)}</strong><span>Due ${date(t.deadline)}</span></div><div class="business-task-footer"><span>${pending ? `${pending} new ${pending === 1 ? "application" : "applications"}` : submitted ? "Submission ready for review" : `${current.length} applications`}</span><button class="text-button" data-business-task="${esc(t.id)}">Manage task ↗</button></div></article>`;
+}
+function businessTasksPage() {
+  return `${header("Your work starts with a clear brief", "Post and manage paid tasks for your business.", "MY BUSINESS TASKS")}<div class="section-heading"><h2>${ownedTasks.length} ${ownedTasks.length === 1 ? "task" : "tasks"} posted</h2><button class="button primary" data-post-task>Post a paid task ＋</button></div>${ownedTasks.length ? `<div class="business-task-grid">${ownedTasks.map(businessTaskCard).join("")}</div>` : businessEmpty("What could local talent help you with?", "A social media pack, a stock spreadsheet or a fresh website. Start with one clear, achievable task.")}`;
+}
+function businessFilters(includeStatus = false) {
+  return `<div class="business-filters"><label>Task<select id="business-task-filter"><option value="all">All my tasks</option>${ownedTasks.map((t) => `<option value="${esc(t.id)}" ${businessTaskFilter === t.id ? "selected" : ""}>${esc(t.title)}</option>`).join("")}</select></label>${includeStatus ? `<label>Application status<select id="business-status-filter"><option value="all">All statuses</option>${["applied", "assigned", "submitted", "changes_requested", "completed", "not_selected"].map((s) => `<option value="${s}" ${businessStatusFilter === s ? "selected" : ""}>${labels[s]}</option>`).join("")}</select></label>` : ""}<button class="button secondary" data-refresh-workspace>Refresh ↻</button></div>`;
+}
+function businessApplicantRow(a) {
+  return `<article class="business-applicant"><div class="applicant-top"><span class="avatar">${esc(initials(a.talent_name))}</span><div><h3>${esc(a.talent_name)}</h3><small>Applied for ${esc(a.title)}</small></div>${status(a.status)}</div><p class="applicant-pitch">${esc(a.pitch)}</p><div class="applicant-footer"><small>Applied ${date(a.applied_at)}</small><div>${a.share_public ? `<a class="work-link" href="/passport/${esc(a.passport_token)}" target="_blank" rel="noopener noreferrer">View skills passport ↗</a>` : '<span class="private-note">No public passport shared</span>'}<button class="button ${a.status === "applied" ? "primary" : "secondary"}" data-project="${esc(a.id)}">${a.status === "applied" ? "Review application" : "View details"} ↗</button></div></div></article>`;
+}
+function businessApplicantsPage() {
+  const list = projects.filter(
+    (a) =>
+      (businessTaskFilter === "all" || a.task_id === businessTaskFilter) &&
+      (businessStatusFilter === "all" || a.status === businessStatusFilter),
+  );
+  return `${header("Meet your next collaborator", "Read applications, explore shared evidence and choose the right person for your task.", "APPLICANTS")}${businessFilters(true)}<div class="section-heading"><h2>${list.length} ${list.length === 1 ? "application" : "applications"}</h2></div><div class="applicant-list">${list.length ? list.map(businessApplicantRow).join("") : businessEmpty("No applications in this view yet.", "Applications to your tasks will appear here. Try another filter or check your posted tasks.", "tasks")}</div>`;
+}
+function businessWorkRow(a) {
+  return `<article class="project-row"><span class="company-logo green">${esc(initials(a.talent_name))}</span><div class="project-info"><small>${esc(a.talent_name)}</small><h3>${esc(a.title)}</h3><span>${money(a.budget)} · Due ${date(a.deadline)}</span></div><div class="project-actions">${status(a.status)}<button class="button ${a.status === "submitted" ? "primary" : "secondary"}" data-project="${esc(a.id)}">${a.status === "submitted" ? "Review submitted work" : "View project"} ↗</button></div></article>`;
+}
+function businessWorkPage() {
+  const work = projects.filter(
+    (a) =>
+      ["assigned", "changes_requested", "submitted", "completed"].includes(
+        a.status,
+      ) &&
+      (businessTaskFilter === "all" || a.task_id === businessTaskFilter),
+  );
+  const review = work.filter((a) => a.status === "submitted"),
+    active = work.filter((a) =>
+      ["assigned", "changes_requested"].includes(a.status),
+    ),
+    done = work.filter((a) => a.status === "completed");
+  return `${header("Keep good work moving", "Track selected talent, review submissions and record completed work.", "ACTIVE WORK")}${businessFilters()}${!work.length ? businessEmpty("Select talent to get a project started.", "Review applications and select one applicant. Their assigned work will appear here.", "tasks") : ""}${[
+    [review, "Awaiting your review"],
+    [active, "Work in progress"],
+    [done, "Completed work"],
+  ]
+    .filter(([items]) => items.length)
+    .map(
+      ([items, title]) =>
+        `<section class="work-section"><div class="section-heading"><h2>${title} <span class="count">${items.length}</span></h2></div><div class="project-list">${items.map(businessWorkRow).join("")}</div></section>`,
+    )
+    .join(
+      "",
+    )}<div class="notice">Work approval records completion. Agree payment terms directly with the talent; SkillBridge does not process or guarantee payments.</div>`;
+}
+function businessTaskDetail(id) {
+  const t = ownedTasks.find((t) => t.id === id);
+  if (!t) return;
+  const applicants = projects.filter((p) => p.task_id === id);
+  modal(
+    t.title,
+    `<div class="project-detail-header">${status(t.status)}<span>Due ${date(t.deadline)}</span></div><h3>${money(t.budget)} · Project budget</h3><p class="preserve">${esc(t.description)}</p>${tags(t.skills)}<h3>${applicants.length} ${applicants.length === 1 ? "application" : "applications"}</h3>${applicants.length ? applicants.map((a) => `<button class="business-action modal-applicant" data-project="${esc(a.id)}"><span class="avatar">${esc(initials(a.talent_name))}</span><span><strong>${esc(a.talent_name)}</strong><small>${labels[a.status]}</small></span><span>↗</span></button>`).join("") : '<div class="notice">Your task is posted. Applications will appear here when talent applies.</div>'}`,
+  );
+  document
+    .querySelectorAll(".modal [data-project]")
+    .forEach(
+      (button) =>
+        (button.onclick = () => projectDetail(button.dataset.project)),
+    );
+}
+
 function projectPage() {
-  return `${header(user.role === "business" ? "Small projects. Shared progress" : "Your work, taking shape", user.role === "business" ? "Review applications, choose talent and approve completed work." : "Follow your applications, submit your work and build your passport.", "FROM OPPORTUNITY TO EXPERIENCE")}${user.role === "business" ? `<div class="section-heading"><h2>Your tasks</h2><button class="button primary" id="post-task">Post a task ＋</button></div><div class="owned-tasks">${ownedTasks.length ? ownedTasks.map((t) => `<article class="owned-task"><div><h3>${esc(t.title)}</h3><p>${money(t.budget)} · Due ${date(t.deadline)} · ${t.applicants} applicants ${t.isDemo ? "· Fictional demo task" : ""}</p></div>${status(t.status)}</article>`).join("") : '<div class="notice">No tasks yet. Post a clear brief to get started.</div>'}</div><div class="section-heading"><h2>Applications & active projects</h2></div>` : ""}<div class="project-list">${projects.length ? projects.map((a) => `<article class="project-row"><span class="company-logo green">${esc(initials(user.role === "business" ? a.talent_name : a.business_name))}</span><div class="project-info"><small>${esc(user.role === "business" ? a.talent_name : a.business_name)}</small><h3>${esc(a.title)}</h3><span>${money(a.budget)} · Due ${date(a.deadline)}</span></div><div class="project-actions">${status(a.status)}<button class="button secondary" data-project="${esc(a.id)}">${user.role === "business" && a.status === "applied" ? "Review application" : "View project"} ↗</button></div></article>`).join("") : `<div class="empty"><span>↗</span><h2>${user.role === "business" ? "Good work begins with an opportunity" : "Your next chapter is waiting"}</h2><p>${user.role === "business" ? "Applications from talent will appear here after you post a task." : "Apply for an opportunity. Your application and project progress will appear here."}</p><button class="button primary" data-view="discover">Explore opportunities ↗</button></div>`}</div><div class="notice">Budgets record the agreed value of work. SkillBridge does not collect, hold or guarantee payments. Agree payment terms directly before work starts.</div>`;
+  return `${header("Your applications. Your next steps", "Track applications, submit assigned work and build experience for your passport.", "MY APPLICATIONS & WORK")}<div class="section-heading"><h2>${projects.length} ${projects.length === 1 ? "application" : "applications"}</h2><button class="button secondary" data-view="discover">Find work ↗</button></div><div class="project-list">${projects.length ? projects.map((a) => `<article class="project-row"><span class="company-logo green">${esc(initials(a.business_name))}</span><div class="project-info"><small>${esc(a.business_name)}</small><h3>${esc(a.title)}</h3><span>${money(a.budget)} · Due ${date(a.deadline)}</span></div><div class="project-actions">${status(a.status)}<button class="button secondary" data-project="${esc(a.id)}">${["assigned", "changes_requested"].includes(a.status) ? "Submit work" : "View application"} ↗</button></div></article>`).join("") : `<section class="empty"><span>↗</span><h2>Your next chapter is waiting.</h2><p>Apply for a task that matches your skills. Your application and work progress will appear here.</p><button class="button primary" data-view="discover">Find an opportunity ↗</button></section>`}</div><div class="notice">Agree payment terms with the business before starting. SkillBridge records work progress and does not collect or guarantee payments.</div>`;
 }
 function evidenceCard(e, publicView = false) {
   const confirmed =
@@ -218,31 +373,52 @@ function confirmationPage() {
 function profilePage() {
   return `${header(user.role === "business" ? "Introduce your business" : "Make your potential visible", user.role === "business" ? "A clear business profile helps talent understand who they will work with." : "Record your skills so we can explain which opportunities match.", "NICE TO MEET YOU")}<form id="profile-form" class="form-panel"><div class="profile-intro"><span class="avatar large">${esc(initials(user.name))}</span><div><h2>${user.role === "business" ? "Business" : "Talent"} profile</h2><p>${user.role === "business" ? "Post tasks and review submissions." : "Document your work and build a skills passport."}</p></div></div><label>${user.role === "business" ? "Business name" : "Full name"}<input name="name" required minlength="2" maxlength="80" value="${esc(user.name)}"/></label><label>Headline<input name="headline" maxlength="100" value="${esc(user.headline)}" placeholder="${user.role === "business" ? "A little about your business" : "e.g. Creative talent & customer service experience"}"/></label><label>Location<input name="location" maxlength="80" value="${esc(user.location)}" placeholder="e.g. Johannesburg"/></label><label>About ${user.role === "business" ? "your business" : "you"}<textarea name="bio" rows="4" maxlength="1500">${esc(user.bio)}</textarea></label>${user.role === "talent" ? `<label>Skills <small>Separate with commas. Use the same skill names you see on opportunities.</small><input name="skills" required value="${esc(user.skills.join(", "))}" placeholder="Canva, Customer service, Administration"/></label><div class="skill-suggestions">Suggested: Canva · Customer service · Stock capture · Administration · Excel · Social media · Graphic design · HTML & CSS</div>` : ""}<div class="form-error" role="alert"></div><button class="button primary" type="submit">Save profile ↗</button></form>`;
 }
-async function loadView() {
+async function loadView(expected = navigation) {
+  const current = () => expected === navigation;
   if (publicToken) {
-    publicPassport = await api("/public/passports/" + publicToken);
+    const result = await api("/public/passports/" + publicToken);
+    if (current()) publicPassport = result;
     return;
   }
-  if (view === "discover") {
-    const d = await api("/tasks");
-    tasks = d.tasks;
-    categories = d.categories;
+  if (
+    user?.role === "business" &&
+    ["dashboard", "tasks", "applicants", "projects"].includes(view)
+  ) {
+    const result = await api("/projects");
+    if (!current()) return;
+    projects = result.projects;
+    ownedTasks = result.tasks;
+    if (view === "dashboard") {
+      const records = await api("/confirmations");
+      if (current()) confirmations = records.confirmations;
+    }
+  } else if (view === "discover") {
+    const result = await api("/tasks");
+    if (!current()) return;
+    tasks = result.tasks;
+    categories = result.categories;
   } else if (user && view === "projects") {
-    const d = await api("/projects");
-    projects = d.projects;
-    ownedTasks = d.tasks;
+    const result = await api("/projects");
+    if (!current()) return;
+    projects = result.projects;
+    ownedTasks = result.tasks;
   } else if (user && view === "passport" && user.role === "talent") {
-    const [e, p] = await Promise.all([api("/evidence"), api("/passport")]);
-    evidence = e.evidence;
-    passport = p;
+    const [records, record] = await Promise.all([
+      api("/evidence"),
+      api("/passport"),
+    ]);
+    if (!current()) return;
+    evidence = records.evidence;
+    passport = record;
   } else if (user && view === "confirmations") {
-    confirmations = (await api("/confirmations")).confirmations;
+    const result = await api("/confirmations");
+    if (current()) confirmations = result.confirmations;
   }
 }
 let navigation = 0;
 async function navigate(next) {
   const token = ++navigation;
-  view = navItems().some((x) => x[0] === next) ? next : "discover";
+  view = resolveView(user?.role, next);
   closeModal();
   if (location.hash.slice(1) !== view)
     history.replaceState(null, "", "#" + view);
@@ -275,6 +451,7 @@ function bind() {
     try {
       await api("/auth/logout", { method: "POST" });
       user = null;
+      resetWorkspace();
       await navigate("discover");
       toast("You’re signed out.");
     } catch (e) {
@@ -284,10 +461,7 @@ function bind() {
   document
     .querySelector("#help")
     ?.addEventListener("click", () =>
-      modal(
-        "Your skills. A path forward.",
-        `<ol class="help-list"><li>Create a talent profile and record your skills.</li><li>Add past work and request confirmation from another account.</li><li>Apply for a task. The business selects you, reviews your submission and approves the work.</li><li>Choose which evidence and completed projects to share in your QR-linked passport.</li></ol><div class="notice">Contact confirmations are not independent skills assessments. No qualification or payment guarantee is issued.</div>`,
-      ),
+      modal("Your skills. A path forward.", helpContent()),
     );
   document.querySelector("#search")?.addEventListener("input", (e) => {
     query = e.target.value;
@@ -315,7 +489,31 @@ function bind() {
         .querySelector("#opportunities")
         .scrollIntoView({ behavior: "smooth" }),
     );
-  document.querySelector("#post-task")?.addEventListener("click", postTask);
+  document
+    .querySelectorAll("[data-post-task],#post-task")
+    .forEach((button) => button.addEventListener("click", postTask));
+  document
+    .querySelectorAll("[data-business-task]")
+    .forEach(
+      (button) =>
+        (button.onclick = () =>
+          businessTaskDetail(button.dataset.businessTask)),
+    );
+  document
+    .querySelector("#business-task-filter")
+    ?.addEventListener("change", async (e) => {
+      businessTaskFilter = e.target.value;
+      await navigate(view);
+    });
+  document
+    .querySelector("#business-status-filter")
+    ?.addEventListener("change", async (e) => {
+      businessStatusFilter = e.target.value;
+      await navigate(view);
+    });
+  document
+    .querySelector("[data-refresh-workspace]")
+    ?.addEventListener("click", () => navigate(view));
   document
     .querySelectorAll("[data-project]")
     .forEach((b) => (b.onclick = () => projectDetail(b.dataset.project)));
@@ -442,7 +640,11 @@ function bind() {
       });
       user = result.user;
       await navigate("profile");
-      toast("Profile saved. Your opportunity matches will use these skills.");
+      toast(
+        user.role === "business"
+          ? "Business profile saved."
+          : "Profile saved. Your opportunity matches will use these skills.",
+      );
     });
 }
 function bindCards() {
@@ -504,21 +706,26 @@ function handleForm(form, callback) {
     }
   });
 }
-function authModal(mode = "login") {
+function authModal(mode = "login", preferredRole = "talent") {
   const register = mode === "register";
   modal(
     register ? "Your next chapter starts here." : "Welcome back.",
-    `<p>${register ? "Join as talent or a business. You can sign out and use a separate account to test the other side." : "Sign in to continue your work and build your next opportunity."}</p><form id="auth-form">${register ? '<label>Account type<select name="role"><option value="talent">Talent — build experience & find work</option><option value="business">Business — post tasks & review work</option></select></label><label>Your name / business name<input name="name" required minlength="2" maxlength="80" autocomplete="name"/></label>' : ""}<label>Email<input name="email" type="email" required autocomplete="email" maxlength="254"/></label><label>Password<input name="password" type="password" required minlength="${register ? "10" : "1"}" maxlength="128" autocomplete="${register ? "new-password" : "current-password"}"/>${register ? "<small>At least 10 characters. Use a password unique to this app.</small>" : ""}</label><div class="form-error" role="alert"></div><button class="button primary full" type="submit">${register ? "Create account" : "Sign in"} ↗</button></form><button class="text-button auth-switch" id="switch-auth">${register ? "Already have an account? Sign in" : "New here? Create an account"}</button><details class="demo-accounts"><summary>Judge demo accounts</summary><p>Fictional shared accounts. Create your own accounts for a fresh test. Demo data can change when other testers use it.</p><button class="button secondary" data-demo="talent">Talent demo</button><button class="button secondary" data-demo="business">Business demo</button><button class="button secondary" data-demo="reviewer">Contact demo</button><p>Demo accounts are optional. The deployment owner creates them during database setup.</p></details>`,
+    `<p>${register ? "Choose your account: find paid work as a young person, or hire talent for your business." : "Sign in to continue your work and build your next opportunity."}</p><form id="auth-form">${register ? `<label>Account type<select name="role"><option value="talent" ${preferredRole === "talent" ? "selected" : ""}>Young person — build experience & find work</option><option value="business" ${preferredRole === "business" ? "selected" : ""}>Business — post tasks & review work</option></select></label><label>Your name / business name<input name="name" required minlength="2" maxlength="80" autocomplete="name"/></label>` : ""}<label>Email<input name="email" type="email" required autocomplete="email" maxlength="254"/></label><label>Password<input name="password" type="password" required minlength="${register ? "10" : "1"}" maxlength="128" autocomplete="${register ? "new-password" : "current-password"}"/>${register ? "<small>At least 10 characters. Use a password unique to this app.</small>" : ""}</label><div class="form-error" role="alert"></div><button class="button primary full" type="submit">${register ? "Create account" : "Sign in"} ↗</button></form><button class="text-button auth-switch" id="switch-auth">${register ? "Already have an account? Sign in" : "New here? Create an account"}</button><details class="demo-accounts"><summary>Judge demo accounts</summary><p>Fictional shared accounts. Create your own accounts for a fresh test. Demo data can change when other testers use it.</p><button class="button secondary" data-demo="talent">Talent demo</button><button class="button secondary" data-demo="business">Business demo</button><button class="button secondary" data-demo="reviewer">Contact demo</button><p>Demo accounts are optional. The deployment owner creates them during database setup.</p></details>`,
   );
   handleForm(document.querySelector("#auth-form"), async (data) => {
     const result = await api("/auth/" + (register ? "register" : "login"), {
       method: "POST",
       body: data,
     });
+    resetWorkspace();
     user = result.user;
     closeModal();
     await navigate(
-      register ? "profile" : user.role === "business" ? "projects" : "discover",
+      user.role === "business"
+        ? "dashboard"
+        : register
+          ? "profile"
+          : "discover",
     );
     toast(
       register
@@ -527,7 +734,7 @@ function authModal(mode = "login") {
     );
   });
   document.querySelector("#switch-auth").onclick = () =>
-    authModal(register ? "login" : "register");
+    authModal(register ? "login" : "register", preferredRole);
   document.querySelectorAll("[data-demo]").forEach(
     (b) =>
       (b.onclick = () => {
@@ -552,7 +759,7 @@ async function taskDetail(id) {
     const already = projects.find((p) => p.task_id === id);
     modal(
       t.title,
-      `<div class="detail-business"><span class="company-logo green">${esc(initials(t.business_name))}</span><div><strong>${esc(t.business_name)}</strong><p>${esc(t.location || "South Africa")}${t.isDemo ? " · Fictional demo task" : ""}</p></div></div><div class="detail-stats"><div><small>Project budget</small><strong>${money(t.budget)}</strong></div><div><small>Deadline</small><strong>${date(t.deadline)}</strong></div><div><small>Status</small><strong>${esc(labels[t.status])}</strong></div></div><h3>The brief</h3><p class="preserve">${esc(t.description)}</p>${tags(t.skills)}<div class="notice">Agree the work and payment terms with the business before starting. Payments are not processed or guaranteed by SkillBridge.</div>${!user ? '<button class="button primary full" id="apply-signin">Sign in to apply ↗</button>' : user.role === "business" ? '<div class="notice">You’re signed in as a business. Talent accounts apply for tasks.</div>' : already ? `<div class="notice">You already applied. Find this task in My projects.</div>` : t.status === "open" ? '<form id="apply-form"><label>Why are you a good fit?<textarea name="pitch" rows="4" required minlength="20" maxlength="2500" placeholder="Share the experience and skills you would bring to this task…"></textarea></label><button class="button primary full" type="submit">Send application ↗</button></form>' : '<div class="notice">This task is no longer accepting applications.</div>'}<button class="text-button report-link" id="report-task">Report this task</button>`,
+      `<div class="detail-business"><span class="company-logo green">${esc(initials(t.business_name))}</span><div><strong>${esc(t.business_name)}</strong><p>${esc(t.location || "South Africa")}${t.isDemo ? " · Fictional demo task" : ""}</p></div></div><div class="detail-stats"><div><small>Project budget</small><strong>${money(t.budget)}</strong></div><div><small>Deadline</small><strong>${date(t.deadline)}</strong></div><div><small>Status</small><strong>${esc(labels[t.status])}</strong></div></div><h3>The brief</h3><p class="preserve">${esc(t.description)}</p>${tags(t.skills)}<div class="notice">Agree the work and payment terms with the business before starting. Payments are not processed or guaranteed by SkillBridge.</div>${!user ? '<button class="button primary full" id="apply-signin">Sign in to apply ↗</button>' : user.role === "business" ? '<div class="notice">You’re signed in as a business. Talent accounts apply for tasks.</div>' : already ? `<div class="notice">You already applied. Find this task in My applications.</div>` : t.status === "open" ? '<form id="apply-form"><label>Why are you a good fit?<textarea name="pitch" rows="4" required minlength="20" maxlength="2500" placeholder="Share the experience and skills you would bring to this task…"></textarea></label><button class="button primary full" type="submit">Send application ↗</button></form>' : '<div class="notice">This task is no longer accepting applications.</div>'}<button class="text-button report-link" id="report-task">Report this task</button>`,
     );
     document
       .querySelector("#apply-signin")
@@ -574,7 +781,7 @@ async function taskDetail(id) {
   }
 }
 function postTask() {
-  if (!user) return authModal("register");
+  if (!user) return authModal("register", "business");
   if (user.role !== "business")
     return (
       modal(
@@ -598,7 +805,7 @@ function postTask() {
       },
     });
     closeModal();
-    await navigate("projects");
+    await navigate("tasks");
     toast("Task published. Talent can now apply.");
   });
 }
@@ -643,7 +850,12 @@ function projectDetail(id) {
     });
 }
 async function refreshProject(id) {
-  await navigate("projects");
+  await navigate(
+    user.role === "business" &&
+      ["dashboard", "tasks", "applicants", "projects"].includes(view)
+      ? view
+      : "projects",
+  );
   projectDetail(id);
 }
 function evidenceForm(existing) {
@@ -673,7 +885,7 @@ function evidenceForm(existing) {
 function requestConfirmation(id) {
   modal(
     "Ask someone who knows your work.",
-    `<p>Your contact needs their own SkillBridge account. They’ll find the request under <strong>Confirmations</strong> when they sign in.</p><form id="request-form"><label>Your contact’s sign-in email<input name="email" type="email" required maxlength="254" placeholder="contact@example.com"/></label><div class="notice">No email is sent. Tell your contact to sign in and open Confirmations. They will see this entry’s details and work link, even if it is private.</div><button class="button primary full" type="submit">Request confirmation ↗</button></form>`,
+    `<p>Your contact needs their own SkillBridge account. They’ll find the request under <strong>References</strong> when they sign in.</p><form id="request-form"><label>Your contact’s sign-in email<input name="email" type="email" required maxlength="254" placeholder="contact@example.com"/></label><div class="notice">No email is sent. Tell your contact to sign in and open References. They will see this entry’s details and work link, even if it is private.</div><button class="button primary full" type="submit">Request confirmation ↗</button></form>`,
   );
   handleForm(document.querySelector("#request-form"), async (data) => {
     await api("/evidence/" + id + "/requests", { method: "POST", body: data });

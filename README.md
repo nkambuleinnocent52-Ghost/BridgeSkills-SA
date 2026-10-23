@@ -37,6 +37,10 @@ Open `http://localhost:3000`. Localhost links work on your computer, not another
 
 To use Supabase locally, place `DATABASE_URL` privately in `.env`, run `npm run db:setup` once and then `npm run dev`. Optional `npm run db:setup -- --demo` seeds fictional judge data. On Vercel, migrations and seeding are **not** run on requests: use Supabase's SQL Editor before deployment as described in the guide.
 
+## Separate workspaces
+
+Young people use **Find work**, **My applications** and **Skills & evidence**. Businesses land on their own **Overview**, post paid tasks in **My tasks**, review candidates in **Applicants** and review deliverables in **Active work**. Both roles can respond to experience requests under **References**. Business users are not shown the talent opportunity feed or a personal passport editor.
+
 ## Judge walkthrough
 
 See [JUDGE_GUIDE.md](docs/JUDGE_GUIDE.md). For independent testing, create fresh talent and business accounts in separate browser sessions.
