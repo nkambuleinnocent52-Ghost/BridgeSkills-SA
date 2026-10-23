@@ -1,3 +1,4 @@
+import { databaseFailure } from "./database-error.js";
 import { DatabaseRateLimitStore } from "./rate-limit-store.js";
 import express from "express";
 import helmet from "helmet";
@@ -1027,14 +1028,20 @@ export function createApp(
       });
     }
   }
-  app.use((err, _req, res, _next) => {
-    if (["40001", "40P01", "23505"].includes(err.code))
+  app.use((err, req, res, _next) => {
+    if (req.path === "/api/health")
       return res
-        .status(409)
+        .status(503)
         .json({
-          error:
-            "Another update changed this record, or it already exists. Refresh and try again.",
+          status: "unavailable",
+          component: "database",
+          ...databaseFailure(err),
         });
+    if (["40001", "40P01", "23505"].includes(err.code))
+      return res.status(409).json({
+        error:
+          "Another update changed this record, or it already exists. Refresh and try again.",
+      });
     if (err.status)
       return res.status(err.status).json({
         error: err.message,

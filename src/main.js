@@ -803,7 +803,7 @@ async function boot() {
       render();
     } else await navigate(view);
   } catch (e) {
-    app.innerHTML = `<main class="startup-error"><h1>Let’s get you connected.</h1><p>${esc(e.message)}</p><p>If you’re developing locally, start the API with <code>npm run dev:server</code> in a second terminal.</p><button class="button primary" id="reload">Try again</button></main>`;
+    app.innerHTML = `<main class="startup-error"><h1>Let’s get you connected.</h1><p>${esc(e.message)}</p>${["localhost", "127.0.0.1", "[::1]"].includes(location.hostname) ? "<p>For local development, start the full app with <code>npm run dev</code>.</p>" : "<p>We’re having trouble connecting. Please try again shortly.</p>"}<button class="button primary" id="reload">Try again</button></main>`;
     document.querySelector("#reload").onclick = boot;
   }
 }

@@ -11,6 +11,7 @@ const child = spawn(
     "tests/restart.test.js",
     "tests/workflow.test.js",
     "tests/platform.test.js",
+    "tests/diagnostics.test.js",
     "tests/serverless.test.js",
   ],
   { stdio: "inherit", env: process.env },
