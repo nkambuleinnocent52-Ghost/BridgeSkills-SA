@@ -1,26 +1,810 @@
-import './style.css';
-const icons={grid:'▦',search:'⌕',projects:'▣',portfolio:'◈',profile:'◯',arrow:'↗',chevron:'→'};
-const initial=[{id:1,title:'A fresh look for a local coffee brand',company:'Grounded Coffee Co.',initial:'g.',color:'coffee',category:'Graphic design',description:'Help a neighbourhood favourite stand out. We’re looking for a creative to design a logo and a simple brand kit for our coffee shop.',budget:1800,days:7,location:'Cape Town',tags:['Logo design','Branding','Canva'],applications:8,featured:true},{id:2,title:'Build a website for our growing business',company:'Ubuntu Home & Living',initial:'u',color:'green',category:'Web development',description:'Create a welcoming, mobile-friendly website to showcase our handmade homeware. A simple five-page website with a contact form.',budget:3500,days:14,location:'Johannesburg',tags:['Web design','HTML & CSS','WordPress'],applications:5,featured:true},{id:3,title:'Make our social media feel like us',company:'The Bloom Studio',initial:'✳',color:'pink',category:'Social media',description:'Design a week of Instagram content for our little flower studio. Think fresh colours, thoughtful captions and a whole lot of personality.',budget:1200,days:5,location:'Durban',tags:['Instagram','Content creation','Canva'],applications:12},{id:4,title:'Bring our next event to life',company:'Soweto Sounds',initial:'ss',color:'purple',category:'Graphic design',description:'Design an expressive event poster and three social media assets for our upcoming community music night.',budget:950,days:4,location:'Soweto',tags:['Poster design','Illustration','Photoshop'],applications:6},{id:5,title:'Help us organise our customer data',company:'Fresh Basket Market',initial:'fb',color:'yellow',category:'Data & admin',description:'Organise our customer spreadsheet, remove duplicate entries and build a simple monthly sales summary.',budget:800,days:3,location:'Pretoria',tags:['Excel','Data entry','Google Sheets'],applications:4},{id:6,title:'Tell the story behind our handmade goods',company:'Made by Mzansi',initial:'m.',color:'blue',category:'Writing',description:'Write thoughtful product descriptions for ten locally made products, plus a short story for our about page.',budget:1500,days:7,location:'Remote',tags:['Copywriting','Storytelling','SEO'],applications:7}];
-const read=(key,fallback)=>{try{return JSON.parse(localStorage.getItem(key))??fallback}catch{return fallback}};
-let tasks=read('sb-tasks',initial), applications=read('sb-applications',[]),saved=read('sb-saved',[]),profile=read('sb-profile',{name:'Thando',surname:'Mokoena',headline:'Graphic designer & creative thinker',location:'Johannesburg',bio:'Turning ideas into thoughtful visuals. Ready to learn, collaborate and build something meaningful.',skills:'Graphic design, Canva, Branding'}),view='discover',category='All opportunities',query='',onlySaved=false,sort='recommended',activeTask=null;
-const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const money=n=>'R '+Number(n).toLocaleString('en-ZA');
-function persist(){localStorage.setItem('sb-tasks',JSON.stringify(tasks));localStorage.setItem('sb-applications',JSON.stringify(applications));localStorage.setItem('sb-saved',JSON.stringify(saved));localStorage.setItem('sb-profile',JSON.stringify(profile))}
-function toast(message){document.querySelector('.toast')?.remove();const el=document.createElement('div');el.className='toast';el.setAttribute('role','status');el.textContent='✓  '+message;document.body.append(el);setTimeout(()=>el.remove(),3500)}
-function render(){document.querySelector('#app').innerHTML=`<aside class="sidebar"><a class="brand" href="#" aria-label="SkillBridge home"><span class="brand-icon">s<span>↗</span></span><span>skillbridge<span class="sa">SA</span></span></a><div class="workspace-label">YOUR WORKSPACE</div><nav>${[['discover','grid','Discover opportunities'],['projects','projects','My projects'],['portfolio','portfolio','My portfolio'],['profile','profile','My profile']].map(([id,icon,label])=>`<button data-view="${id}" class="nav-item ${view===id?'active':''}"><span>${icons[icon]}</span>${label}${id==='projects'&&applications.length?`<b>${applications.length}</b>`:''}</button>`).join('')}</nav><div class="sidebar-bottom"><div class="grow-card"><span class="grow-icon">✧</span><h3>Small steps. Big futures.</h3><p>Every project is a chance to learn, earn and grow.</p><button data-view="portfolio">Build your portfolio <span>↗</span></button></div><button class="help" id="help">ⓘ <span>A little help?</span> ↗</button><button class="user" data-view="profile"><span class="avatar">${esc(profile.name[0]||'T')}${esc(profile.surname[0]||'M')}</span><span><strong>${esc(profile.name)} ${esc(profile.surname)}</strong><small>Talent account</small></span><span>⌄</span></button></div></aside><div class="main-shell"><header><div class="breadcrumb">Your workspace <span>/</span> <strong>${{discover:'Discover opportunities',projects:'My projects',portfolio:'My portfolio',profile:'My profile'}[view]}</strong></div><div class="header-actions"><span class="demo"><i></i> Hackathon demo</span><button class="icon-button" id="notifications" aria-label="Notifications">♧<i></i></button><button class="avatar small" data-view="profile" aria-label="Open profile">${esc(profile.name[0]||'T')}${esc(profile.surname[0]||'M')}</button></div></header><main>${view==='discover'?discover():view==='projects'?projects():view==='portfolio'?portfolio():profilePage()}</main><footer><span>Made for the next generation of South African talent.</span><span>Small beginnings. Real possibilities. <b>✳</b></span></footer></div><div id="modal-root"></div>`;bind();}
-function discover(){return `<section class="page-heading"><div><div class="eyebrow">YOUR NEXT CHAPTER STARTS HERE</div><h1>Big potential. Real opportunities<span>.</span></h1><p>Put your skills to work. Build your experience. Make your next move.</p></div><button class="button secondary" id="post-task">Post a task <span>＋</span></button></section><section class="hero"><div class="hero-copy"><div class="hero-badge"><span>✦</span> YOUR SKILLS CAN TAKE YOU PLACES</div><h2>A little skill.<br>A world of <em>possibility.</em></h2><p>Connect with local businesses, work on real projects,<br class="desktop"/> and turn what you know into what’s next.</p><button class="button dark" id="explore">Find your opportunity <span>↗</span></button><div class="hero-note"><span class="tiny-avatars"><i>LN</i><i>KM</i><i>AZ</i></span><span>Local talent. Local businesses. Shared growth.</span></div></div><div class="hero-art" aria-hidden="true"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><span class="art-star star-one">✳</span><span class="art-star star-two">✧</span><div class="floating-label label-one"><span>✦</span> Your next chapter</div><div class="art-window"><div class="window-bar"><span>● ● ●</span><span>THE POSSIBILITIES ARE ENDLESS ↗</span></div><div class="window-body"><div class="art-sun">✳</div><span class="art-cursor">➤</span><div class="window-line"></div><div class="window-line short"></div><span class="art-pill">Made of potential.</span></div></div><div class="floating-label label-two"><span>✓</span><div>Skills → experience<strong>You’ve got this.</strong></div><span>↗</span></div><div class="art-spark">✦</div></div></section><section class="quick-stats"><div><span class="stat-icon peach">↗</span><div><strong>${tasks.filter(t=>!t.closed).length} opportunities</strong><small>Ready for your next move</small></div></div><div><span class="stat-icon sage">▤</span><div><strong>Real-world experience</strong><small>Projects that build your portfolio</small></div></div><div><span class="stat-icon lilac">♡</span><div><strong>Rooted in community</strong><small>Grow with South African businesses</small></div></div></section><section class="opportunities" id="opportunities"><div class="section-heading"><div><h2>Find your next opportunity <span>↗</span></h2><p>A small project today. A big step for your future.</p></div><button class="saved-toggle ${onlySaved?'selected':''}" id="saved-toggle">${onlySaved?'♥':'♡'} Saved <span>${saved.length}</span></button></div><div class="search-row"><label class="search-box"><span>⌕</span><input id="search" value="${esc(query)}" placeholder="Try “logo design” or “website”…" aria-label="Search opportunities"/><kbd>⌘ K</kbd></label><select id="sort" aria-label="Sort opportunities"><option value="recommended" ${sort==='recommended'?'selected':''}>Recommended for you</option><option value="budget" ${sort==='budget'?'selected':''}>Highest budget first</option><option value="deadline" ${sort==='deadline'?'selected':''}>Shortest deadline first</option></select></div><div class="categories">${['All opportunities','Graphic design','Web development','Social media','Writing','Data & admin'].map((c,i)=>`<button data-category="${c}" class="${category===c?'active':''}">${['✦','◈','⌘','◎','✎','▤'][i]} <span>${c}</span></button>`).join('')}</div><div id="task-results">${taskResults()}</div></section><section class="bottom-banner"><span>✳</span><div><h3>Your first opportunity could be someone’s fresh start.</h3><p>Have a project in mind? Give local talent a chance to shine.</p></div><button class="button secondary" id="post-bottom">Post a task <span>↗</span></button></section>`}
-function taskResults(){let list=tasks.filter(t=>(category==='All opportunities'||t.category===category)&&(!onlySaved||saved.includes(t.id))&&`${t.title} ${t.company} ${t.tags.join(' ')} ${t.description}`.toLowerCase().includes(query.toLowerCase()));if(sort==='budget')list.sort((a,b)=>b.budget-a.budget);if(sort==='deadline')list.sort((a,b)=>a.days-b.days);return `<div class="results-caption"><span>Showing <strong>${list.length}</strong> ${onlySaved?'saved ':''}opportunities</span><span><i class="green-dot"></i> A fresh start is a project away</span></div><div class="task-grid">${list.length?list.map(card).join(''):'<div class="empty"><span>⌕</span><h3>No opportunities here yet</h3><p>Try a different search or category, or save a task to find it here.</p><button class="button secondary" id="reset">Clear filters</button></div>'}</div>`}
-function card(t){const applied=applications.some(a=>a.taskId===t.id);return `<article class="task-card"><div class="card-top"><span class="company-logo ${t.color}">${esc(t.initial)}</span><div class="company-info"><strong>${esc(t.company)}</strong><span>⌖ ${esc(t.location)} <i>·</i> Remote friendly</span></div><button class="save-button ${saved.includes(t.id)?'saved':''}" data-save="${t.id}" aria-label="${saved.includes(t.id)?'Unsave':'Save'} ${esc(t.title)}">${saved.includes(t.id)?'♥':'♡'}</button></div><div class="card-category">${esc(t.category)}${t.featured?'<span>✦ Great first project</span>':''}</div><button class="card-title" data-task="${t.id}">${esc(t.title)}</button><p>${esc(t.description)}</p><div class="tags">${t.tags.map(s=>`<span>${esc(s)}</span>`).join('')}</div><div class="card-meta"><div><strong>${money(t.budget)}</strong><span>Project budget</span></div><div class="deadline">◷ <span>${t.days} day turnaround</span></div></div><div class="card-footer"><span>${applied?'✓ Application sent':`${t.applications} applicants · Open for applications`}</span><button data-task="${t.id}">View task <span>↗</span></button></div></article>`}
-function projects(){return `<section class="page-heading"><div><div class="eyebrow">ONE STEP CLOSER</div><h1>Your work, taking shape<span>.</span></h1><p>Keep track of your applications and bring your projects across the finish line.</p></div><button class="button secondary" data-view="discover">Find a project ↗</button></section><div class="notice">ⓘ Demo workspace — applications and project progress are saved on this browser. No payments are processed.</div><div class="project-list">${applications.length?applications.map(a=>{let t=tasks.find(t=>t.id===a.taskId);return `<article class="project-row"><span class="company-logo ${t.color}">${esc(t.initial)}</span><div class="project-info"><small>${esc(t.company)}</small><h3>${esc(t.title)}</h3><span>${money(t.budget)} · ${esc(a.status)}</span></div><button class="button secondary" data-project="${t.id}">${a.status==='Applied'?'View application':a.status==='Completed'?'View project':'Continue project'} ↗</button></article>`}).join(''):`<div class="empty"><span>↗</span><h2>Your next chapter is waiting</h2><p>Apply for a task that feels like you. Your applications and projects will appear here.</p><button class="button primary" data-view="discover">Explore opportunities ↗</button></div>`}</div>`}
-function portfolio(){let done=applications.filter(a=>a.status==='Completed');return `<section class="page-heading"><div><div class="eyebrow">PROOF OF YOUR POTENTIAL</div><h1>Let your work do the talking<span>.</span></h1><p>Your projects. Your progress. A portfolio that grows with you.</p></div></section><div class="portfolio-profile"><span class="avatar large">${esc(profile.name[0])}${esc(profile.surname[0])}</span><div><h2>${esc(profile.name)} ${esc(profile.surname)}</h2><p>${esc(profile.headline)}</p><span>⌖ ${esc(profile.location)}</span></div><button class="button secondary" data-view="profile">Edit profile ↗</button></div><div class="section-heading"><h2>Completed projects <span class="count">${done.length}</span></h2></div><div class="task-grid">${done.length?done.map(a=>{const t=tasks.find(x=>x.id===a.taskId);return `<article class="task-card"><div class="portfolio-art ${t.color}">✳ <span>${esc(t.category)}</span> ↗</div><h3>${esc(t.title)}</h3><p>${esc(t.company)}</p><span class="status">✓ Completed in demo</span><button class="button secondary" data-project="${t.id}">View project ↗</button></article>`}).join(''):`<div class="empty"><span>◈</span><h2>Great work starts with one project</h2><p>Complete a project and add it here to show future clients what you can do.</p><button class="button primary" data-view="discover">Find your first project ↗</button></div>`}</div>`}
-function profilePage(){return `<section class="page-heading"><div><div class="eyebrow">NICE TO MEET YOU</div><h1>Make your potential visible<span>.</span></h1><p>Tell local businesses a little about you and what you love to do.</p></div></section><form id="profile-form" class="form-panel"><div class="profile-intro"><span class="avatar large">${esc(profile.name[0])}${esc(profile.surname[0])}</span><div><h2>Your talent profile</h2><p>Demo profile · stored on this device</p></div></div><div class="form-grid"><label>First name<input name="name" required maxlength="40" value="${esc(profile.name)}"/></label><label>Last name<input name="surname" required maxlength="40" value="${esc(profile.surname)}"/></label></div><label>What do you do?<input name="headline" required maxlength="100" value="${esc(profile.headline)}"/></label><label>Location<input name="location" required value="${esc(profile.location)}"/></label><label>A little about you<textarea name="bio" rows="4" required>${esc(profile.bio)}</textarea></label><label>Your skills <small>Separate each skill with a comma</small><input name="skills" required value="${esc(profile.skills)}"/></label><button class="button primary">Save profile ↗</button></form>`}
-function bind(){document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{view=b.dataset.view;render();window.scrollTo(0,0)});document.querySelector('.brand').onclick=e=>{e.preventDefault();view='discover';render()};document.querySelectorAll('#post-task,#post-bottom').forEach(b=>b.onclick=postTask);document.querySelector('#help').onclick=()=>modal('A little guidance, a big first step',`<p>Browse a task, read the brief and send an application. Your progress lives in <strong>My projects</strong>.</p><p>For your hackathon presentation, use the labelled demo controls to assign, submit and review work. Completed work appears in your portfolio.</p><div class="notice">This is a frontend prototype with fictional businesses. Accounts, messaging and payments are not connected. Keep sensitive information out of demo forms.</div>`);document.querySelector('#notifications').onclick=()=>modal('You’re all caught up',`<div class="empty compact"><span>✧</span><h3>A little space for what’s next</h3><p>Your application and project updates will appear in My projects. Live notifications will arrive when a backend is connected.</p></div>`);document.querySelector('#explore')?.addEventListener('click',()=>document.querySelector('#opportunities').scrollIntoView({behavior:'smooth'}));document.querySelector('#search')?.addEventListener('input',e=>{query=e.target.value;updateResults()});document.querySelector('#sort')?.addEventListener('change',e=>{sort=e.target.value;updateResults()});document.querySelector('#saved-toggle')?.addEventListener('click',()=>{onlySaved=!onlySaved;const y=window.scrollY;render();window.scrollTo(0,y)});document.querySelectorAll('[data-category]').forEach(b=>b.onclick=()=>{category=b.dataset.category;document.querySelectorAll('[data-category]').forEach(x=>x.classList.toggle('active',x===b));updateResults()});bindCards();document.querySelectorAll('[data-project]').forEach(b=>b.onclick=()=>projectDetail(Number(b.dataset.project)));document.querySelector('#profile-form')?.addEventListener('submit',e=>{e.preventDefault();profile=Object.fromEntries(new FormData(e.target));persist();render();toast('Your profile is looking good. Changes saved.');});}
-function bindCards(){document.querySelectorAll('[data-task]').forEach(b=>b.onclick=()=>taskDetail(Number(b.dataset.task)));document.querySelectorAll('[data-save]').forEach(b=>b.onclick=()=>{let id=Number(b.dataset.save);saved=saved.includes(id)?saved.filter(x=>x!==id):[...saved,id];persist();updateResults();document.querySelector('#saved-toggle span').textContent=saved.length});document.querySelector('#reset')?.addEventListener('click',()=>{category='All opportunities';query='';onlySaved=false;render()})}
-function updateResults(){const root=document.querySelector('#task-results');if(root){root.innerHTML=taskResults();bindCards()}}
-function modal(title,body){document.querySelector('#modal-root').innerHTML=`<div class="modal-overlay"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><button class="close-modal" aria-label="Close dialog">×</button><div class="eyebrow">SKILLBRIDGE SA</div><h2 id="modal-title">${esc(title)}</h2>${body}</section></div>`;document.body.style.overflow='hidden';document.querySelector('.close-modal').onclick=closeModal;document.querySelector('.modal-overlay').onclick=e=>{if(e.target.classList.contains('modal-overlay'))closeModal()};document.querySelector('.close-modal').focus()}
-function closeModal(){document.querySelector('#modal-root').innerHTML='';document.body.style.overflow=''}
-function taskDetail(id){activeTask=id;const t=tasks.find(t=>t.id===id),a=applications.find(a=>a.taskId===id);modal(t.title,`<div class="detail-business"><span class="company-logo ${t.color}">${esc(t.initial)}</span><div><strong>${esc(t.company)}</strong><p>${esc(t.location)} · Remote friendly</p></div></div><div class="detail-stats"><div><small>Project budget</small><strong>${money(t.budget)}</strong></div><div><small>Turnaround</small><strong>${t.days} days</strong></div><div><small>Category</small><strong>${esc(t.category)}</strong></div></div><h3>The brief</h3><p>${esc(t.description)}</p><h3>Skills you’ll use</h3><div class="tags">${t.tags.map(x=>`<span>${esc(x)}</span>`).join('')}</div><div class="notice">Demo opportunity · Budget is illustrative. Payment integration is planned for a future version.</div>${a?`<button class="button primary full" id="see-project">View your application ↗</button>`:`<form id="apply-form"><label>Why are you a good fit?<textarea name="pitch" rows="3" placeholder="Share your skills, ideas and what excites you about this task…" required minlength="20" maxlength="2000"></textarea></label><button class="button primary full">Send application ↗</button><small class="form-note">Your demo application stays on this device.</small></form>`}`);document.querySelector('#see-project')?.addEventListener('click',()=>projectDetail(id));document.querySelector('#apply-form')?.addEventListener('submit',e=>{e.preventDefault();applications.push({taskId:id,status:'Applied',pitch:new FormData(e.target).get('pitch'),submission:''});persist();closeModal();render();toast('Application sent! Follow your progress in My projects.')})}
-function projectDetail(id){const a=applications.find(a=>a.taskId===id),t=tasks.find(t=>t.id===id);const statuses=['Applied','Assigned','Submitted','Completed'];modal(t.title,`<div class="progress-steps">${statuses.map((s,i)=>`<div class="${statuses.indexOf(a.status)>=i?'done':''}"><span>${statuses.indexOf(a.status)>=i?'✓':i+1}</span><small>${s}</small></div>`).join('')}</div><h3>Your application</h3><p class="preserve">${esc(a.pitch)}</p>${a.submission?`<h3>Submitted work</h3><p class="preserve">${esc(a.submission)}</p>`:''}${a.feedback?`<div class="notice">Business feedback: ${esc(a.feedback)}</div>`:''}<div class="notice">Hackathon walkthrough: the controls below simulate the business side. Real businesses have not reviewed this work.</div>${a.status==='Applied'?'<button class="button primary full" id="assign">Demo: accept application →</button>':a.status==='Assigned'?'<form id="submit-work"><label>Share your work<textarea name="submission" required minlength="10" rows="4" placeholder="Add your project link and a short explanation of what you created."></textarea></label><button class="button primary full">Submit work for review ↗</button></form>':a.status==='Submitted'?'<div class="button-pair"><button class="button secondary" id="changes">Demo: request changes</button><button class="button primary" id="complete">Demo: approve work ✓</button></div>':'<div class="success-panel">✦ Project complete. This work is now in your portfolio.</div><button class="button primary full" id="see-portfolio">Go to my portfolio ↗</button>'}`);document.querySelector('#assign')?.addEventListener('click',()=>{a.status='Assigned';persist();render();projectDetail(id)});document.querySelector('#submit-work')?.addEventListener('submit',e=>{e.preventDefault();a.submission=new FormData(e.target).get('submission');a.status='Submitted';a.feedback='';persist();render();projectDetail(id)});document.querySelector('#changes')?.addEventListener('click',()=>{modal('Help the project move forward',`<form id="feedback-form"><label>What needs to change?<textarea name="feedback" required minlength="10" rows="4" placeholder="Give clear, constructive feedback…"></textarea></label><button class="button primary full">Demo: send feedback →</button></form>`);document.querySelector('#feedback-form').onsubmit=e=>{e.preventDefault();a.feedback=new FormData(e.target).get('feedback');a.status='Assigned';persist();render();projectDetail(id)}});document.querySelector('#complete')?.addEventListener('click',()=>{a.status='Completed';persist();render();projectDetail(id)});document.querySelector('#see-portfolio')?.addEventListener('click',()=>{closeModal();view='portfolio';render()})}
-function postTask(){modal('Give local talent a fresh start.',`<p>Tell us what your business needs. A clear brief makes a great beginning.</p><form id="post-form"><div class="form-grid"><label>Business name<input name="company" required maxlength="60" placeholder="Your business"/></label><label>Location<input name="location" required maxlength="60" placeholder="e.g. Johannesburg"/></label></div><label>Task title<input name="title" required maxlength="100" placeholder="What would you like help with?"/></label><label>Category<select name="category">${['Graphic design','Web development','Social media','Writing','Data & admin'].map(c=>`<option>${c}</option>`).join('')}</select></label><label>The brief<textarea name="description" required minlength="30" maxlength="2000" rows="3" placeholder="Describe the work, deliverables and what success looks like…"></textarea></label><div class="form-grid"><label>Budget (ZAR)<input name="budget" type="number" required min="100" max="1000000" placeholder="1500"/></label><label>Turnaround (days)<input name="days" type="number" required min="1" max="365" placeholder="7"/></label></div><label>Required skills<input name="tags" required placeholder="e.g. Canva, Branding, Logo design"/></label><div class="notice">Demo mode: your task is visible in this browser only. No business account or payment is created.</div><button class="button primary full">Publish demo task ↗</button></form>`);document.querySelector('#post-form').onsubmit=e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.target));tasks.unshift({...d,id:Date.now(),initial:d.company.slice(0,2).toLowerCase(),color:'green',budget:Number(d.budget),days:Number(d.days),tags:d.tags.split(',').map(x=>x.trim()).filter(Boolean),applications:0});persist();closeModal();view='discover';category='All opportunities';query='';onlySaved=false;render();toast('Your demo task is live. Let’s create an opportunity!');document.querySelector('#opportunities').scrollIntoView({behavior:'smooth'})}}
-document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();if((e.metaKey||e.ctrlKey)&&e.key==='k'){e.preventDefault();document.querySelector('#search')?.focus()}if(e.key==='Tab'&&document.querySelector('.modal')){const els=[...document.querySelector('.modal').querySelectorAll('button,input,select,textarea,[href]')];if(e.shiftKey&&document.activeElement===els[0]){e.preventDefault();els.at(-1).focus()}else if(!e.shiftKey&&document.activeElement===els.at(-1)){e.preventDefault();els[0].focus()}}});
-render();
+import "./style.css";
+const app = document.querySelector("#app");
+let user = null,
+  tasks = [],
+  categories = [
+    "Graphic design",
+    "Web development",
+    "Social media",
+    "Writing",
+    "Small-business support",
+  ],
+  projects = [],
+  ownedTasks = [],
+  evidence = [],
+  confirmations = [],
+  passport = null;
+let view = location.hash.slice(1) || "discover",
+  query = "",
+  category = "All opportunities",
+  sort = "match",
+  publicPassport = null;
+const publicToken = location.pathname.match(
+  /^\/passport\/([a-zA-Z0-9-]+)\/?$/,
+)?.[1];
+const esc = (value) =>
+  String(value ?? "").replace(
+    /[&<>"']/g,
+    (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
+        c
+      ],
+  );
+const money = (n) => "R " + Number(n).toLocaleString("en-ZA");
+const date = (value) =>
+  value
+    ? new Date(
+        value.length === 10 ? value + "T12:00:00" : value,
+      ).toLocaleDateString("en-ZA", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      })
+    : "—";
+const fullDate = (value) =>
+  value
+    ? new Date(value).toLocaleString("en-ZA", {
+        timeZone: "Africa/Johannesburg",
+        dateStyle: "medium",
+        timeStyle: "short",
+      }) + " SAST"
+    : "—";
+const initials = (name) =>
+  name
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((s) => s[0])
+    .join("")
+    .toUpperCase();
+const skillList = (s) =>
+  s
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
+const tags = (list) =>
+  `<div class="tags">${list.map((s) => `<span>${esc(s)}</span>`).join("")}</div>`;
+const link = (url, label = "Open work link ↗") =>
+  url
+    ? `<a class="work-link" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(label)}</a>`
+    : "";
+const labels = {
+  applied: "Applied",
+  assigned: "Assigned",
+  not_selected: "Not selected",
+  submitted: "Submitted",
+  changes_requested: "Changes requested",
+  completed: "Completed",
+  open: "Open",
+  requested: "Awaiting confirmation",
+  confirmed: "Confirmed by a contact",
+  declined: "Declined",
+  withdrawn: "Withdrawn",
+  superseded: "Previous version",
+};
+const status = (s) =>
+  `<span class="status-badge ${s}">${esc(labels[s] || s)}</span>`;
+async function api(path, options = {}) {
+  let response;
+  try {
+    response = await fetch("/api" + path, {
+      credentials: "same-origin",
+      ...options,
+      headers: { "Content-Type": "application/json", ...options.headers },
+      ...(options.body ? { body: JSON.stringify(options.body) } : {}),
+    });
+  } catch {
+    throw new Error(
+      "Could not reach the server. Check your connection and try again.",
+    );
+  }
+  const data = await response
+    .json()
+    .catch(() => ({ error: "The server returned an unexpected response." }));
+  if (!response.ok) {
+    if (response.status === 401 && user) {
+      user = null;
+    }
+    throw new Error(data.error || "The request failed.");
+  }
+  return data;
+}
+function toast(message) {
+  document.querySelector(".toast")?.remove();
+  const el = document.createElement("div");
+  el.className = "toast";
+  el.setAttribute("role", "status");
+  el.textContent = message;
+  document.body.append(el);
+  setTimeout(() => el.remove(), 4500);
+}
+function header(title, subtitle, eyebrow = "YOUR NEXT CHAPTER") {
+  return `<section class="page-heading"><div><div class="eyebrow">${eyebrow}</div><h1>${title}<span>.</span></h1><p>${subtitle}</p></div></section>`;
+}
+function navItems() {
+  return [
+    ["discover", "▦", "Opportunities"],
+    [
+      "projects",
+      "▣",
+      user?.role === "business" ? "Business tasks" : "My projects",
+    ],
+    ["passport", "◈", "Skills passport"],
+    ["confirmations", "✓", "Confirmations"],
+    ["profile", "◯", "My profile"],
+  ].filter(([v]) => v !== "passport" || user?.role !== "business");
+}
+function shell(content) {
+  if (publicToken)
+    return `<div class="public-shell"><div class="public-header"><a class="brand" href="/"><span class="brand-icon">s<span>↗</span></span><span>skillbridge<span class="sa">SA</span></span></a><a class="button secondary" href="/">Explore opportunities ↗</a></div><main>${content}</main><footer>SkillBridge SA · Evidence of work. A bridge to what’s next.</footer><div id="modal-root"></div></div>`;
+  return `<aside class="sidebar"><a class="brand" href="#discover"><span class="brand-icon">s<span>↗</span></span><span>skillbridge<span class="sa">SA</span></span></a><div class="workspace-label">YOUR WORKSPACE</div><nav>${navItems()
+    .map(
+      ([v, icon, title]) =>
+        `<button data-view="${v}" class="nav-item ${view === v ? "active" : ""}"><span>${icon}</span>${title}</button>`,
+    )
+    .join(
+      "",
+    )}</nav><div class="sidebar-bottom"><div class="grow-card"><span class="grow-icon">✧</span><h3>Your experience counts.</h3><p>Document what you can do. Build proof with every project.</p><button data-view="${user?.role === "business" ? "projects" : "passport"}">${user?.role === "business" ? "Find your next collaborator" : "Build your skills passport"} <span>↗</span></button></div><button class="help" id="help">ⓘ <span>How it works</span> ↗</button>${user ? `<button class="user" data-view="profile"><span class="avatar">${esc(initials(user.name))}</span><span><strong>${esc(user.name)}</strong><small>${user.role === "talent" ? "Talent" : "Business"} account</small></span><span>⌄</span></button>` : '<button class="button dark sign-in-sidebar" data-auth="login">Sign in ↗</button>'}</div></aside><div class="main-shell"><header><div class="breadcrumb">Your workspace <span>/</span><strong>${esc(navItems().find((x) => x[0] === view)?.[2] || "Opportunities")}</strong></div><div class="header-actions"><span class="demo"><i></i> Hackathon MVP</span>${user ? `<button class="text-button" id="logout">Sign out</button><button class="avatar small" data-view="profile" aria-label="My profile">${esc(initials(user.name))}</button>` : '<button class="button secondary" data-auth="login">Sign in</button><button class="button primary" data-auth="register">Get started ↗</button>'}</div></header><main>${content}</main><footer><span>Built for South African talent and small businesses.</span><span>Evidence of work. A bridge to what’s next. <b>✳</b></span></footer></div><div id="modal-root"></div>`;
+}
+function render() {
+  let content;
+  if (publicToken)
+    content = publicPassport
+      ? passportDisplay(publicPassport, true)
+      : header(
+          "Passport unavailable",
+          "This passport is private, unavailable, or its share link has changed.",
+        );
+  else
+    content =
+      view === "discover"
+        ? discover()
+        : !user
+          ? gate()
+          : view === "projects"
+            ? projectPage()
+            : view === "passport" && user.role === "talent"
+              ? passportPage()
+              : view === "confirmations"
+                ? confirmationPage()
+                : profilePage();
+  app.innerHTML = shell(content);
+  bind();
+}
+function gate() {
+  return `${header("Your next chapter starts here", "Create an account to build your passport, apply for opportunities, or post a business task.")}<section class="empty"><span>↗</span><h2>Bring your skills. Build your proof.</h2><p>Talent and businesses use separate accounts. Your work and confirmations are stored securely on the server.</p><button class="button primary" data-auth="register">Create an account ↗</button><button class="button secondary" data-auth="login">I already have an account</button></section>`;
+}
+function discover() {
+  return `<section class="page-heading"><div><div class="eyebrow">REAL SKILLS. REAL POSSIBILITIES.</div><h1>Your next opportunity starts here<span>.</span></h1><p>Put your skills to work. Build experience you can show.</p></div><button class="button secondary" id="post-task">Post a task ＋</button></section><section class="hero"><div class="hero-copy"><div class="hero-badge">✦ MORE THAN A CV. PROOF OF YOUR POTENTIAL.</div><h2>A little skill.<br>A world of <em>possibility.</em></h2><p>Start with what you know. Complete a real project.<br class="desktop"/> Carry the evidence into your next opportunity.</p><button class="button dark" id="explore">Find your opportunity <span>↗</span></button><div class="hero-note">✦ Your experience counts. Let’s make it visible.</div></div><div class="hero-art" aria-hidden="true"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><span class="art-star star-one">✳</span><span class="art-star star-two">✧</span><div class="floating-label label-one">✦ Your next chapter</div><div class="art-window"><div class="window-bar"><span>● ● ●</span><span>YOUR SKILLS PASSPORT ↗</span></div><div class="window-body"><div class="art-sun">✳</div><span class="art-cursor">➤</span><div class="window-line"></div><div class="window-line short"></div><span class="art-pill">Made of potential.</span></div></div><div class="floating-label label-two"><span>✓</span><div>Skills → experience<strong>Proof you can carry.</strong></div><span>↗</span></div></div></section><section class="quick-stats"><div><span class="stat-icon peach">↗</span><div><strong>${tasks.length} open opportunities</strong><small>Find a practical first step</small></div></div><div><span class="stat-icon sage">▤</span><div><strong>Experience that counts</strong><small>Past work and completed projects</small></div></div><div><span class="stat-icon lilac">◈</span><div><strong>Your skills passport</strong><small>Share the evidence you choose</small></div></div></section><section id="opportunities"><div class="section-heading"><div><h2>Find your next opportunity <span>↗</span></h2><p>Digital services and everyday small-business support.</p></div></div><div class="search-row"><label class="search-box"><span>⌕</span><input id="search" value="${esc(query)}" aria-label="Search opportunities" placeholder="Try “Canva”, “customer service” or “stock”…"/><kbd>⌘ K</kbd></label><select id="sort" aria-label="Sort opportunities"><option value="match" ${sort === "match" ? "selected" : ""}>Best skill matches</option><option value="budget" ${sort === "budget" ? "selected" : ""}>Highest budget first</option><option value="deadline" ${sort === "deadline" ? "selected" : ""}>Earliest deadline first</option></select></div><div class="categories">${["All opportunities", ...categories].map((c, i) => `<button data-category="${esc(c)}" class="${category === c ? "active" : ""}">${["✦", "◈", "⌘", "◎", "✎", "▤"][i]} ${esc(c)}</button>`).join("")}</div><div id="task-results">${taskResults()}</div></section><section class="bottom-banner"><span>✳</span><div><h3>Experience shouldn’t disappear when the work is done.</h3><p>Build a passport with your past work, confirmations and completed projects.</p></div><button class="button secondary" data-view="${user?.role === "business" ? "projects" : "passport"}">${user?.role === "business" ? "Manage tasks" : "Build my passport"} ↗</button></section>`;
+}
+function taskResults() {
+  let list = tasks.filter(
+    (t) =>
+      (category === "All opportunities" || category === t.category) &&
+      [t.title, t.description, t.business_name, ...t.skills]
+        .join(" ")
+        .toLowerCase()
+        .includes(query.toLowerCase()),
+  );
+  if (sort === "budget") list.sort((a, b) => b.budget - a.budget);
+  if (sort === "deadline")
+    list.sort((a, b) => a.deadline.localeCompare(b.deadline));
+  return `<div class="results-caption"><span>${list.length} ${list.length === 1 ? "opportunity" : "opportunities"} · Matches use exact recorded skills, not AI assessment</span></div><div class="task-grid">${list.length ? list.map(taskCard).join("") : '<div class="empty"><span>⌕</span><h3>No opportunities found</h3><p>Try another skill or category. Businesses can post a new task.</p></div>'}</div>`;
+}
+function taskCard(t) {
+  return `<article class="task-card"><div class="card-top"><span class="company-logo ${t.isDemo ? "coffee" : "green"}">${esc(initials(t.business_name))}</span><div class="company-info"><strong>${esc(t.business_name)}</strong><span>${esc(t.location || "South Africa")} · Remote friendly</span></div></div><div class="card-category">${esc(t.category)}${t.isDemo ? "<span>Fictional demo task</span>" : ""}</div><button class="card-title" data-task="${esc(t.id)}">${esc(t.title)}</button><p>${esc(t.description)}</p>${tags(t.skills)}<div class="match-reason ${t.matchedSkills.length ? "has-match" : ""}">✦ ${esc(t.matchReason)}</div><div class="card-meta"><div><strong>${money(t.budget)}</strong><span>Agreed project budget</span></div><div class="deadline">◷ <span>Due ${date(t.deadline)}</span></div></div><div class="card-footer"><span>${t.applicants} ${t.applicants === 1 ? "applicant" : "applicants"}</span><button data-task="${esc(t.id)}">View task <span>↗</span></button></div></article>`;
+}
+function projectPage() {
+  return `${header(user.role === "business" ? "Small projects. Shared progress" : "Your work, taking shape", user.role === "business" ? "Review applications, choose talent and approve completed work." : "Follow your applications, submit your work and build your passport.", "FROM OPPORTUNITY TO EXPERIENCE")}${user.role === "business" ? `<div class="section-heading"><h2>Your tasks</h2><button class="button primary" id="post-task">Post a task ＋</button></div><div class="owned-tasks">${ownedTasks.length ? ownedTasks.map((t) => `<article class="owned-task"><div><h3>${esc(t.title)}</h3><p>${money(t.budget)} · Due ${date(t.deadline)} · ${t.applicants} applicants ${t.isDemo ? "· Fictional demo task" : ""}</p></div>${status(t.status)}</article>`).join("") : '<div class="notice">No tasks yet. Post a clear brief to get started.</div>'}</div><div class="section-heading"><h2>Applications & active projects</h2></div>` : ""}<div class="project-list">${projects.length ? projects.map((a) => `<article class="project-row"><span class="company-logo green">${esc(initials(user.role === "business" ? a.talent_name : a.business_name))}</span><div class="project-info"><small>${esc(user.role === "business" ? a.talent_name : a.business_name)}</small><h3>${esc(a.title)}</h3><span>${money(a.budget)} · Due ${date(a.deadline)}</span></div><div class="project-actions">${status(a.status)}<button class="button secondary" data-project="${esc(a.id)}">${user.role === "business" && a.status === "applied" ? "Review application" : "View project"} ↗</button></div></article>`).join("") : `<div class="empty"><span>↗</span><h2>${user.role === "business" ? "Good work begins with an opportunity" : "Your next chapter is waiting"}</h2><p>${user.role === "business" ? "Applications from talent will appear here after you post a task." : "Apply for an opportunity. Your application and project progress will appear here."}</p><button class="button primary" data-view="discover">Explore opportunities ↗</button></div>`}</div><div class="notice">Budgets record the agreed value of work. SkillBridge does not collect, hold or guarantee payments. Agree payment terms directly before work starts.</div>`;
+}
+function evidenceCard(e, publicView = false) {
+  const confirmed =
+    e.confirmations?.length &&
+    e.confirmations.some((c) => !c.status || c.status === "confirmed");
+  return `<article class="evidence-card"><div class="evidence-heading"><div><small>${esc(e.organisation)} · ${esc(e.period)}</small><h3>${esc(e.title)}</h3></div><span class="status-badge ${confirmed ? "confirmed" : "self-declared"}">${confirmed ? "Confirmed by a contact" : "Self-declared"}</span></div><p class="preserve">${esc(e.description)}</p>${tags(e.skills)}${link(e.work_url)}${e.confirmations?.length ? `<div class="confirmation-history">${e.confirmations.map((c) => `<div><strong>${esc(c.confirmer_name)}</strong> ${!c.status || c.status === "confirmed" ? "confirmed this experience" : esc(labels[c.status])}${c.relationship ? ` · ${esc(c.relationship)}` : ""}<small>${fullDate(c.responded_at || c.created_at)}${c.revision ? ` · Version ${c.revision}` : ""}</small>${c.statement ? `<p class="preserve">“${esc(c.statement)}”</p>` : ""}</div>`).join("")}</div>` : ""}${publicView ? "" : `<div class="evidence-actions"><span class="visibility-label">${e.public_consent ? "◉ Selected for public passport" : "◌ Private evidence"}</span><button class="text-button" data-evidence-visibility="${esc(e.id)}">${e.public_consent ? "Make private" : "Allow public sharing"}</button><button class="text-button" data-edit-evidence="${esc(e.id)}">Edit</button><button class="text-button" data-request="${esc(e.id)}">Request confirmation ↗</button><button class="text-button danger" data-delete-evidence="${esc(e.id)}">Delete</button></div>`}</article>`;
+}
+function passportPage() {
+  return `${header("Your experience. Your proof", "Bring together the work you’ve done and the people who can confirm it.", "YOUR SKILLS PASSPORT")}<div class="passport-layout"><div><div class="section-heading"><h2>Previous work experience</h2><button class="button primary" id="add-evidence">Add experience ＋</button></div><div class="evidence-list">${evidence.length ? evidence.map((e) => evidenceCard(e)).join("") : `<div class="empty"><span>◈</span><h2>You have a story worth showing</h2><p>Add a past project or experience in customer service, stock capture, administration or digital services.</p><button class="button secondary" id="first-evidence">Add your first experience ↗</button></div>`}</div><div class="section-heading spaced"><h2>Completed SkillBridge projects</h2></div>${passport?.completed.length ? passport.completed.map((a) => completedCard(a, false)).join("") : '<div class="notice">Business-approved projects appear here once you complete the task journey. Only projects you allow will appear on your public passport.</div>'}</div><aside class="sharing-panel"><span class="grow-icon">◈</span><h3>Proof you can carry.</h3><p>Share a read-only passport with an employer. Choose each experience and completed project you want to include.</p><div class="notice compact-notice">Your name, headline, location, bio and profile skills are visible when sharing is on. Email and private entries stay hidden.</div><label class="checkbox-label"><input type="checkbox" id="sharing-toggle" ${passport?.sharePublic ? "checked" : ""}/> Enable public passport</label>${passport?.sharePublic ? `<div id="qr-container" class="qr-container"><span>Loading QR code…</span></div><a class="button secondary full" href="${esc(passport.url)}" target="_blank" rel="noopener noreferrer">View public passport ↗</a><button class="button primary full" id="copy-passport">Copy share link</button><button class="text-button" id="rotate-passport">Replace share link</button>` : '<div class="private-passport">◌ Your passport is private.<br/>Enable sharing to create a public link and QR code.</div>'}<p class="small-print">Contact confirmations are statements by account holders, not independent assessments. This passport is not a qualification or NQF certification.</p></aside></div>`;
+}
+function completedCard(a, publicView) {
+  return `<article class="evidence-card completed-card"><div class="evidence-heading"><div><small>${esc(a.business_name)} · ${date(a.updated_at)}${a.isDemo ? " · Fictional demo task" : ""}</small><h3>${esc(a.title)}</h3></div><span class="status-badge completed">Completed through SkillBridge</span></div><h4>The brief</h4><p class="preserve">${esc(a.description)}</p>${tags(a.skills)}<h4>Submitted work</h4><p class="preserve">${esc(a.submission)}</p>${link(a.work_url)}<div class="confirmation-history"><strong>Business feedback</strong><p class="preserve">“${esc(a.feedback)}”</p><small>Approved by ${esc(a.business_name)} · ${fullDate(a.updated_at)}</small></div>${publicView ? "" : `<div class="evidence-actions"><span>${a.public_consent ? "◉ Selected for public passport" : "◌ Private project"}</span><button class="text-button" data-project-visibility="${esc(a.id)}">${a.public_consent ? "Make private" : "Allow public sharing"}</button></div>`}</article>`;
+}
+function passportDisplay(p, publicView) {
+  return `${header("A little proof. A lot of potential", "A work evidence passport shared by its owner.", "SKILLBRIDGE SA · PUBLIC PASSPORT")}<section class="portfolio-profile"><span class="avatar large">${esc(initials(p.profile.name))}</span><div><h2>${esc(p.profile.name)}</h2><p>${esc(p.profile.headline || "Building experience, one project at a time.")}</p><span>${esc(p.profile.location)}</span></div></section>${p.profile.bio ? `<p class="profile-bio preserve">${esc(p.profile.bio)}</p>` : ""}${tags(p.profile.skills)}<div class="notice">${esc(p.disclaimer)}</div><div class="section-heading"><h2>Work experience</h2></div><div class="evidence-list">${p.evidence.length ? p.evidence.map((e) => evidenceCard(e, publicView)).join("") : '<div class="notice">No previous experience has been shared publicly.</div>'}</div><div class="section-heading spaced"><h2>Completed projects</h2></div>${p.completed.length ? p.completed.map((a) => completedCard(a, true)).join("") : '<div class="notice">No completed projects have been shared publicly.</div>'}<div class="public-footer-note">Confirmations record what the named contact stated. SkillBridge has not independently verified their identity or assessed competence. <button class="text-button" id="report-passport">Report a concern</button></div>`;
+}
+function confirmationPage() {
+  return `${header("A little confirmation goes a long way", "Confirm only work you directly know about. Your name, statement and response time are recorded.", "EXPERIENCE, ACKNOWLEDGED")}<div class="notice">These are in-app requests. No email or SMS is sent. Talent shares your sign-in email to request your confirmation. Your email is not shown on the public passport.</div><button class="button secondary refresh-requests" id="refresh-all-confirmations">Refresh requests ↻</button><div class="evidence-list">${confirmations.length ? confirmations.map((c) => `<article class="evidence-card"><div class="evidence-heading"><div><small>Requested by ${esc(c.talent_name)} · ${fullDate(c.created_at)}</small><h3>${esc(c.title)}</h3></div>${status(c.status)}</div><p><strong>${esc(c.organisation)}</strong> · ${esc(c.period)}</p><p class="preserve">${esc(c.description)}</p>${tags(c.skills)}${link(c.work_url)}${c.statement ? `<div class="confirmation-history"><strong>Your statement · ${esc(c.relationship)}</strong><p class="preserve">${esc(c.statement)}</p><small>${fullDate(c.responded_at)}</small></div>` : ""}${c.status === "requested" ? `<button class="button primary" data-respond="${esc(c.id)}">Review this experience ↗</button>` : c.status === "confirmed" ? `<button class="text-button danger" data-withdraw="${esc(c.id)}">Withdraw my confirmation</button>` : ""}</article>`).join("") : '<div class="empty"><span>✓</span><h2>No confirmation requests yet</h2><p>When someone requests your confirmation of their past work, it appears here. Refresh to check for new requests.</p><button class="button secondary" id="refresh-confirmations">Refresh requests ↻</button></div>'}</div>`;
+}
+function profilePage() {
+  return `${header(user.role === "business" ? "Introduce your business" : "Make your potential visible", user.role === "business" ? "A clear business profile helps talent understand who they will work with." : "Record your skills so we can explain which opportunities match.", "NICE TO MEET YOU")}<form id="profile-form" class="form-panel"><div class="profile-intro"><span class="avatar large">${esc(initials(user.name))}</span><div><h2>${user.role === "business" ? "Business" : "Talent"} profile</h2><p>${user.role === "business" ? "Post tasks and review submissions." : "Document your work and build a skills passport."}</p></div></div><label>${user.role === "business" ? "Business name" : "Full name"}<input name="name" required minlength="2" maxlength="80" value="${esc(user.name)}"/></label><label>Headline<input name="headline" maxlength="100" value="${esc(user.headline)}" placeholder="${user.role === "business" ? "A little about your business" : "e.g. Creative talent & customer service experience"}"/></label><label>Location<input name="location" maxlength="80" value="${esc(user.location)}" placeholder="e.g. Johannesburg"/></label><label>About ${user.role === "business" ? "your business" : "you"}<textarea name="bio" rows="4" maxlength="1500">${esc(user.bio)}</textarea></label>${user.role === "talent" ? `<label>Skills <small>Separate with commas. Use the same skill names you see on opportunities.</small><input name="skills" required value="${esc(user.skills.join(", "))}" placeholder="Canva, Customer service, Administration"/></label><div class="skill-suggestions">Suggested: Canva · Customer service · Stock capture · Administration · Excel · Social media · Graphic design · HTML & CSS</div>` : ""}<div class="form-error" role="alert"></div><button class="button primary" type="submit">Save profile ↗</button></form>`;
+}
+async function loadView() {
+  if (publicToken) {
+    publicPassport = await api("/public/passports/" + publicToken);
+    return;
+  }
+  if (view === "discover") {
+    const d = await api("/tasks");
+    tasks = d.tasks;
+    categories = d.categories;
+  } else if (user && view === "projects") {
+    const d = await api("/projects");
+    projects = d.projects;
+    ownedTasks = d.tasks;
+  } else if (user && view === "passport" && user.role === "talent") {
+    const [e, p] = await Promise.all([api("/evidence"), api("/passport")]);
+    evidence = e.evidence;
+    passport = p;
+  } else if (user && view === "confirmations") {
+    confirmations = (await api("/confirmations")).confirmations;
+  }
+}
+let navigation = 0;
+async function navigate(next) {
+  const token = ++navigation;
+  view = navItems().some((x) => x[0] === next) ? next : "discover";
+  closeModal();
+  if (location.hash.slice(1) !== view)
+    history.replaceState(null, "", "#" + view);
+  app.innerHTML = shell(
+    '<div class="loading" role="status">Getting your workspace ready…</div>',
+  );
+  try {
+    await loadView();
+    if (token !== navigation) return;
+    render();
+    if (view === "passport" && passport?.sharePublic) loadQR();
+    window.scrollTo(0, 0);
+  } catch (e) {
+    if (token !== navigation) return;
+    app.innerHTML = shell(
+      `<section class="empty"><h2>We couldn’t load this page</h2><p>${esc(e.message)}</p><button class="button primary" id="retry">Try again</button></section>`,
+    );
+    bind();
+    document.querySelector("#retry").onclick = () => navigate(view);
+  }
+}
+function bind() {
+  document
+    .querySelectorAll("[data-view]")
+    .forEach((b) => (b.onclick = () => navigate(b.dataset.view)));
+  document
+    .querySelectorAll("[data-auth]")
+    .forEach((b) => (b.onclick = () => authModal(b.dataset.auth)));
+  document.querySelector("#logout")?.addEventListener("click", async () => {
+    try {
+      await api("/auth/logout", { method: "POST" });
+      user = null;
+      await navigate("discover");
+      toast("You’re signed out.");
+    } catch (e) {
+      toast(e.message);
+    }
+  });
+  document
+    .querySelector("#help")
+    ?.addEventListener("click", () =>
+      modal(
+        "Your skills. A path forward.",
+        `<ol class="help-list"><li>Create a talent profile and record your skills.</li><li>Add past work and request confirmation from another account.</li><li>Apply for a task. The business selects you, reviews your submission and approves the work.</li><li>Choose which evidence and completed projects to share in your QR-linked passport.</li></ol><div class="notice">Contact confirmations are not independent skills assessments. No qualification or payment guarantee is issued.</div>`,
+      ),
+    );
+  document.querySelector("#search")?.addEventListener("input", (e) => {
+    query = e.target.value;
+    updateResults();
+  });
+  document.querySelector("#sort")?.addEventListener("change", (e) => {
+    sort = e.target.value;
+    updateResults();
+  });
+  document.querySelectorAll("[data-category]").forEach(
+    (b) =>
+      (b.onclick = () => {
+        category = b.dataset.category;
+        document
+          .querySelectorAll("[data-category]")
+          .forEach((x) => x.classList.toggle("active", x === b));
+        updateResults();
+      }),
+  );
+  bindCards();
+  document
+    .querySelector("#explore")
+    ?.addEventListener("click", () =>
+      document
+        .querySelector("#opportunities")
+        .scrollIntoView({ behavior: "smooth" }),
+    );
+  document.querySelector("#post-task")?.addEventListener("click", postTask);
+  document
+    .querySelectorAll("[data-project]")
+    .forEach((b) => (b.onclick = () => projectDetail(b.dataset.project)));
+  document
+    .querySelectorAll("#add-evidence,#first-evidence")
+    .forEach((b) => (b.onclick = () => evidenceForm()));
+  document
+    .querySelectorAll("[data-edit-evidence]")
+    .forEach(
+      (b) =>
+        (b.onclick = () =>
+          evidenceForm(evidence.find((e) => e.id === b.dataset.editEvidence))),
+    );
+  document
+    .querySelectorAll("[data-request]")
+    .forEach((b) => (b.onclick = () => requestConfirmation(b.dataset.request)));
+  document
+    .querySelectorAll("[data-delete-evidence]")
+    .forEach(
+      (b) => (b.onclick = () => deleteEvidence(b.dataset.deleteEvidence)),
+    );
+  document
+    .querySelectorAll("[data-evidence-visibility]")
+    .forEach(
+      (b) =>
+        (b.onclick = () =>
+          visibility(
+            "evidence",
+            b.dataset.evidenceVisibility,
+            !evidence.find((e) => e.id === b.dataset.evidenceVisibility)
+              .public_consent,
+          )),
+    );
+  document
+    .querySelectorAll("[data-project-visibility]")
+    .forEach(
+      (b) =>
+        (b.onclick = () =>
+          visibility(
+            "applications",
+            b.dataset.projectVisibility,
+            !passport.completed.find(
+              (a) => a.id === b.dataset.projectVisibility,
+            ).public_consent,
+          )),
+    );
+  document
+    .querySelector("#sharing-toggle")
+    ?.addEventListener("change", async (e) => {
+      try {
+        await api("/passport/sharing", {
+          method: "PUT",
+          body: { sharePublic: e.target.checked },
+        });
+        await navigate("passport");
+        toast(
+          passport.sharePublic
+            ? "Public sharing enabled. Only selected entries are included."
+            : "Passport sharing disabled. The public link no longer works.",
+        );
+      } catch (err) {
+        toast(err.message);
+        e.target.checked = !e.target.checked;
+      }
+    });
+  document
+    .querySelector("#copy-passport")
+    ?.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(passport.url);
+        toast("Passport link copied.");
+      } catch {
+        modal(
+          "Your passport link",
+          `<label>Copy this link<input readonly id="share-url" value="${esc(passport.url)}"/></label>`,
+        );
+        document.querySelector("#share-url").select();
+      }
+    });
+  document.querySelector("#rotate-passport")?.addEventListener("click", () =>
+    confirmAction(
+      "Replace your share link?",
+      "The old passport link and QR code will stop working. Anyone you shared it with will need the new link.",
+      async () => {
+        await api("/passport/rotate", { method: "POST" });
+        await navigate("passport");
+        toast("New link created. The old link is revoked.");
+      },
+    ),
+  );
+  document
+    .querySelectorAll("[data-respond]")
+    .forEach((b) => (b.onclick = () => respondConfirmation(b.dataset.respond)));
+  document.querySelectorAll("[data-withdraw]").forEach(
+    (b) =>
+      (b.onclick = () =>
+        confirmAction(
+          "Withdraw your confirmation?",
+          "Your confirmation will no longer appear as current on this passport. The owner will see it marked as withdrawn.",
+          async () => {
+            await api("/confirmations/" + b.dataset.withdraw + "/withdraw", {
+              method: "POST",
+            });
+            await navigate("confirmations");
+            toast("Confirmation withdrawn.");
+          },
+        )),
+  );
+  document
+    .querySelector("#refresh-all-confirmations")
+    ?.addEventListener("click", () => navigate("confirmations"));
+  document
+    .querySelector("#refresh-confirmations")
+    ?.addEventListener("click", () => navigate("confirmations"));
+  document
+    .querySelector("#report-passport")
+    ?.addEventListener("click", () => report("passport", publicToken));
+  const form = document.querySelector("#profile-form");
+  if (form)
+    handleForm(form, async (data) => {
+      const result = await api("/profile", {
+        method: "PUT",
+        body: { ...data, skills: skillList(data.skills || "") },
+      });
+      user = result.user;
+      await navigate("profile");
+      toast("Profile saved. Your opportunity matches will use these skills.");
+    });
+}
+function bindCards() {
+  document
+    .querySelectorAll("[data-task]")
+    .forEach((b) => (b.onclick = () => taskDetail(b.dataset.task)));
+}
+function updateResults() {
+  document.querySelector("#task-results").innerHTML = taskResults();
+  bindCards();
+}
+let returnFocus = null;
+function modal(title, body) {
+  if (!document.querySelector(".modal")) returnFocus = document.activeElement;
+  document.querySelector("#modal-root").innerHTML =
+    `<div class="modal-overlay"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><button class="close-modal" aria-label="Close dialog">×</button><div class="eyebrow">SKILLBRIDGE SA</div><h2 id="modal-title">${esc(title)}</h2>${body}</section></div>`;
+  document.body.style.overflow = "hidden";
+  document.querySelector(".close-modal").onclick = closeModal;
+  document.querySelector(".modal-overlay").onclick = (e) => {
+    if (e.target === e.currentTarget) closeModal();
+  };
+  document.querySelector(".close-modal").focus();
+}
+function closeModal() {
+  const root = document.querySelector("#modal-root");
+  if (root) root.innerHTML = "";
+  document.body.style.overflow = "";
+  if (returnFocus?.isConnected) returnFocus.focus();
+  returnFocus = null;
+}
+function handleForm(form, callback) {
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (form.dataset.busy) return;
+    form.dataset.busy = "true";
+    const button = e.submitter || form.querySelector('button[type="submit"]'),
+      original = button.textContent;
+    button.disabled = true;
+    button.textContent = "Please wait…";
+    let error = form.querySelector(".form-error");
+    if (!error) {
+      error = document.createElement("div");
+      error.className = "form-error";
+      error.setAttribute("role", "alert");
+      button.before(error);
+    }
+    error.textContent = "";
+    try {
+      await callback(Object.fromEntries(new FormData(form)), e);
+    } catch (err) {
+      error.textContent = err.message;
+      error.scrollIntoView({ block: "nearest" });
+    } finally {
+      delete form.dataset.busy;
+      if (button.isConnected) {
+        button.disabled = false;
+        button.textContent = original;
+      }
+    }
+  });
+}
+function authModal(mode = "login") {
+  const register = mode === "register";
+  modal(
+    register ? "Your next chapter starts here." : "Welcome back.",
+    `<p>${register ? "Join as talent or a business. You can sign out and use a separate account to test the other side." : "Sign in to continue your work and build your next opportunity."}</p><form id="auth-form">${register ? '<label>Account type<select name="role"><option value="talent">Talent — build experience & find work</option><option value="business">Business — post tasks & review work</option></select></label><label>Your name / business name<input name="name" required minlength="2" maxlength="80" autocomplete="name"/></label>' : ""}<label>Email<input name="email" type="email" required autocomplete="email" maxlength="254"/></label><label>Password<input name="password" type="password" required minlength="${register ? "10" : "1"}" maxlength="128" autocomplete="${register ? "new-password" : "current-password"}"/>${register ? "<small>At least 10 characters. Use a password unique to this app.</small>" : ""}</label><div class="form-error" role="alert"></div><button class="button primary full" type="submit">${register ? "Create account" : "Sign in"} ↗</button></form><button class="text-button auth-switch" id="switch-auth">${register ? "Already have an account? Sign in" : "New here? Create an account"}</button><details class="demo-accounts"><summary>Judge demo accounts</summary><p>Fictional shared accounts. Create your own accounts for a fresh test. Demo data can change when other testers use it.</p><button class="button secondary" data-demo="talent">Talent demo</button><button class="button secondary" data-demo="business">Business demo</button><button class="button secondary" data-demo="reviewer">Contact demo</button><p>No demo sign-in? Ask the deployment owner to enable SEED_DEMO.</p></details>`,
+  );
+  handleForm(document.querySelector("#auth-form"), async (data) => {
+    const result = await api("/auth/" + (register ? "register" : "login"), {
+      method: "POST",
+      body: data,
+    });
+    user = result.user;
+    closeModal();
+    await navigate(
+      register ? "profile" : user.role === "business" ? "projects" : "discover",
+    );
+    toast(
+      register
+        ? "Account created. Make it yours."
+        : "Welcome back, " + user.name + ".",
+    );
+  });
+  document.querySelector("#switch-auth").onclick = () =>
+    authModal(register ? "login" : "register");
+  document.querySelectorAll("[data-demo]").forEach(
+    (b) =>
+      (b.onclick = () => {
+        if (register) {
+          authModal("login");
+        }
+        const form = document.querySelector("#auth-form"),
+          type = b.dataset.demo;
+        form.elements.email.value = type + "@skillbridge.demo";
+        form.elements.password.value = {
+          talent: "TalentDemo!2026",
+          business: "BusinessDemo!2026",
+          reviewer: "ReviewerDemo!2026",
+        }[type];
+        form.requestSubmit();
+      }),
+  );
+}
+async function taskDetail(id) {
+  try {
+    const { task: t } = await api("/tasks/" + id);
+    const already = projects.find((p) => p.task_id === id);
+    modal(
+      t.title,
+      `<div class="detail-business"><span class="company-logo green">${esc(initials(t.business_name))}</span><div><strong>${esc(t.business_name)}</strong><p>${esc(t.location || "South Africa")}${t.isDemo ? " · Fictional demo task" : ""}</p></div></div><div class="detail-stats"><div><small>Project budget</small><strong>${money(t.budget)}</strong></div><div><small>Deadline</small><strong>${date(t.deadline)}</strong></div><div><small>Status</small><strong>${esc(labels[t.status])}</strong></div></div><h3>The brief</h3><p class="preserve">${esc(t.description)}</p>${tags(t.skills)}<div class="notice">Agree the work and payment terms with the business before starting. Payments are not processed or guaranteed by SkillBridge.</div>${!user ? '<button class="button primary full" id="apply-signin">Sign in to apply ↗</button>' : user.role === "business" ? '<div class="notice">You’re signed in as a business. Talent accounts apply for tasks.</div>' : already ? `<div class="notice">You already applied. Find this task in My projects.</div>` : t.status === "open" ? '<form id="apply-form"><label>Why are you a good fit?<textarea name="pitch" rows="4" required minlength="20" maxlength="2500" placeholder="Share the experience and skills you would bring to this task…"></textarea></label><button class="button primary full" type="submit">Send application ↗</button></form>' : '<div class="notice">This task is no longer accepting applications.</div>'}<button class="text-button report-link" id="report-task">Report this task</button>`,
+    );
+    document
+      .querySelector("#apply-signin")
+      ?.addEventListener("click", () => authModal("login"));
+    document.querySelector("#report-task").onclick = () => report("task", id);
+    const form = document.querySelector("#apply-form");
+    if (form)
+      handleForm(form, async (data) => {
+        await api("/tasks/" + id + "/applications", {
+          method: "POST",
+          body: data,
+        });
+        closeModal();
+        await navigate("projects");
+        toast("Application sent. The business can now review it.");
+      });
+  } catch (e) {
+    toast(e.message);
+  }
+}
+function postTask() {
+  if (!user) return authModal("register");
+  if (user.role !== "business")
+    return (
+      modal(
+        "Tasks are posted by business accounts",
+        `<p>You’re signed in as talent. Sign out and use a separate business account to post work and review applications.</p><button class="button secondary" id="open-profile">View my profile ↗</button>`,
+      ),
+      (document.querySelector("#open-profile").onclick = () =>
+        navigate("profile"))
+    );
+  modal(
+    "Give local talent a fresh start.",
+    `<p>A clear brief helps the right person take their next step.</p><form id="post-form"><label>Task title<input name="title" required minlength="8" maxlength="120" placeholder="e.g. Create our first social media content pack"/></label><label>Category<select name="category">${categories.map((c) => `<option>${esc(c)}</option>`).join("")}</select></label><label>The brief<textarea name="description" required minlength="30" maxlength="4000" rows="4" placeholder="Describe deliverables, acceptance criteria and payment terms."></textarea></label><div class="form-grid"><label>Budget (ZAR)<input name="budget" type="number" required min="100" max="1000000" step="1"/></label><label>Delivery deadline<input name="deadline" type="date" required min="${new Date().toISOString().slice(0, 10)}"/></label></div><label>Required skills<input name="skills" required placeholder="Canva, Social media, Copywriting"/><small>Separate with commas. Matching uses these exact skill names.</small></label><div class="notice">Do not request unpaid trial work or include private customer data. Payment is arranged directly between the participants.</div><button class="button primary full" type="submit">Publish task ↗</button></form>`,
+  );
+  handleForm(document.querySelector("#post-form"), async (data) => {
+    await api("/tasks", {
+      method: "POST",
+      body: {
+        ...data,
+        budget: Number(data.budget),
+        skills: skillList(data.skills),
+      },
+    });
+    closeModal();
+    await navigate("projects");
+    toast("Task published. Talent can now apply.");
+  });
+}
+function projectDetail(id) {
+  const a = projects.find((a) => a.id === id);
+  if (!a) return;
+  const talent = user.role === "talent";
+  modal(
+    a.title,
+    `<div class="project-detail-header"><span>${esc(talent ? a.business_name : a.talent_name)}</span>${status(a.status)}</div><p>${money(a.budget)} · Due ${date(a.deadline)}</p>${!talent && a.share_public ? `<a class="work-link" href="/passport/${esc(a.passport_token)}" target="_blank" rel="noopener noreferrer">View applicant’s public passport ↗</a>` : ""}<h3>The brief</h3><p class="preserve">${esc(a.description)}</p><h3>Application</h3><p class="preserve">${esc(a.pitch)}</p>${a.submission ? `<h3>Latest submitted work</h3><p class="preserve">${esc(a.submission)}</p>${link(a.work_url)}` : ""}${a.feedback ? `<div class="notice"><strong>Business feedback</strong><br/>${esc(a.feedback)}</div>` : ""}${!talent && a.status === "applied" ? `<form id="select-form"><div class="notice">Selecting this applicant assigns the task and marks other applicants as not selected.</div><button class="button primary full" type="submit">Select this applicant ↗</button></form>` : ""}${talent && ["assigned", "changes_requested"].includes(a.status) ? `<form id="submit-form"><label>Submission summary<textarea name="submission" required minlength="20" maxlength="4000" rows="4" placeholder="Explain what you completed and how it meets the brief.">${esc(a.submission)}</textarea></label><label>Work link<input name="workUrl" type="url" required maxlength="1000" value="${esc(a.work_url)}" placeholder="https://…"/><small>Use a link the business can access. Check its sharing permissions.</small></label><label class="checkbox-label"><input name="publicConsent" type="checkbox" ${a.public_consent ? "checked" : ""}/> After approval, allow this work, brief and business feedback on my public passport.</label><button class="button primary full" type="submit">Submit for review ↗</button></form>` : ""}${!talent && a.status === "submitted" ? `<form id="review-form"><label>Your feedback<textarea name="feedback" required minlength="10" maxlength="2000" rows="3" placeholder="Describe what was delivered well, or the changes needed."></textarea></label><label>Decision<select name="action"><option value="approve">Approve completed work</option><option value="changes">Request changes</option></select></label><button class="button primary full" type="submit">Save review ↗</button></form>` : ""}${a.status === "completed" ? '<div class="success-panel">✓ Business-approved work. This project is recorded in the talent’s passport.</div>' : ""}<details class="history"><summary>Project history · ${a.events.length} updates</summary>${a.events.map((e) => `<div class="history-event"><strong>${esc(e.action)}</strong><small>${esc(e.actor_name)} · ${fullDate(e.created_at)}</small><p class="preserve">${esc(e.detail)}</p></div>`).join("")}</details>`,
+  );
+  const select = document.querySelector("#select-form");
+  if (select)
+    handleForm(select, async () => {
+      await api("/applications/" + id + "/select", { method: "POST" });
+      await refreshProject(id);
+      toast("Talent selected. They can now submit work.");
+    });
+  const submit = document.querySelector("#submit-form");
+  if (submit)
+    handleForm(submit, async (data) => {
+      await api("/applications/" + id + "/submit", {
+        method: "POST",
+        body: { ...data, publicConsent: data.publicConsent === "on" },
+      });
+      await refreshProject(id);
+      toast("Work submitted to the business for review.");
+    });
+  const review = document.querySelector("#review-form");
+  if (review)
+    handleForm(review, async (data) => {
+      await api("/applications/" + id + "/review", {
+        method: "POST",
+        body: data,
+      });
+      await refreshProject(id);
+      toast(
+        data.action === "approve"
+          ? "Work approved. The passport now records this project."
+          : "Changes requested. Talent can update the submission.",
+      );
+    });
+}
+async function refreshProject(id) {
+  await navigate("projects");
+  projectDetail(id);
+}
+function evidenceForm(existing) {
+  const e = existing;
+  modal(
+    e ? "Update your experience." : "Your experience counts.",
+    `<p>${e ? "Editing the details creates a new version. Current confirmations become previous-version records and must be requested again." : "Describe work you actually did. A work link is optional; a clear description and contact confirmation can also support your record."}</p><form id="evidence-form"><label>Experience title<input name="title" required minlength="5" maxlength="120" value="${esc(e?.title || "")}" placeholder="e.g. Managed stock records at a local shop"/></label><label>Business or context<input name="organisation" required minlength="2" maxlength="100" value="${esc(e?.organisation || "")}" placeholder="e.g. Neighbourhood shop / family business"/></label><label>When did you do this work?<input name="period" required minlength="3" maxlength="100" value="${esc(e?.period || "")}" placeholder="e.g. January–June 2026"/></label><label>What did you do?<textarea name="description" required minlength="20" maxlength="3000" rows="4" placeholder="Describe your responsibilities and what you produced.">${esc(e?.description || "")}</textarea></label><label>Skills demonstrated<input name="skills" required value="${esc(e?.skills.join(", ") || "")}" placeholder="Stock capture, Excel, Administration"/></label><label>Work link (optional)<input name="workUrl" type="url" maxlength="1000" value="${esc(e?.work_url || "")}" placeholder="https://…"/><small>Link to a work sample or photo/video you host. Use materials you have permission to share.</small></label><label class="checkbox-label"><input name="publicConsent" type="checkbox" ${e?.public_consent ? "checked" : ""}/> Allow this entry, work link and current confirmations on my public passport when sharing is enabled.</label><div class="notice">Keep identity documents, customer details and other private information out of public work samples.</div><button class="button primary full" type="submit">${e ? "Save new version" : "Add experience"} ↗</button></form>`,
+  );
+  handleForm(document.querySelector("#evidence-form"), async (data) => {
+    await api("/evidence" + (e ? "/" + e.id : ""), {
+      method: e ? "PUT" : "POST",
+      body: {
+        ...data,
+        skills: skillList(data.skills),
+        publicConsent: data.publicConsent === "on",
+      },
+    });
+    closeModal();
+    await navigate("passport");
+    toast(
+      e
+        ? "New version saved. Request fresh confirmations for changed work."
+        : "Experience added. You can now request a confirmation.",
+    );
+  });
+}
+function requestConfirmation(id) {
+  modal(
+    "Ask someone who knows your work.",
+    `<p>Your contact needs their own SkillBridge account. They’ll find the request under <strong>Confirmations</strong> when they sign in.</p><form id="request-form"><label>Your contact’s sign-in email<input name="email" type="email" required maxlength="254" placeholder="contact@example.com"/></label><div class="notice">No email is sent. Tell your contact to sign in and open Confirmations. They will see this entry’s details and work link, even if it is private.</div><button class="button primary full" type="submit">Request confirmation ↗</button></form>`,
+  );
+  handleForm(document.querySelector("#request-form"), async (data) => {
+    await api("/evidence/" + id + "/requests", { method: "POST", body: data });
+    closeModal();
+    await navigate("passport");
+    toast("Request saved. Your contact can respond from their account.");
+  });
+}
+function respondConfirmation(id) {
+  const c = confirmations.find((c) => c.id === id);
+  modal(
+    "Confirm what you directly know.",
+    `<p>${esc(c.talent_name)} described <strong>${esc(c.title)}</strong> at ${esc(c.organisation)}.</p><p class="preserve">${esc(c.description)}</p><form id="respond-form"><label>Your relationship to this work<input name="relationship" required minlength="3" maxlength="100" placeholder="e.g. Supervisor at the shop"/></label><label>Your statement<textarea name="statement" required minlength="10" maxlength="1500" rows="4" placeholder="Describe what you directly observed. Do not confirm work you cannot vouch for."></textarea></label><label>Decision<select name="action"><option value="confirm">Confirm this experience</option><option value="decline">Decline confirmation</option></select></label><div class="notice">Your name, relationship, statement and response time are recorded. Confirmed statements may be shown publicly if the owner shares this entry. You can withdraw your confirmation later.</div><label class="checkbox-label"><input type="checkbox" required/> I understand how my statement may be shared and will respond truthfully.</label><button class="button primary full" type="submit">Save response ↗</button></form>`,
+  );
+  handleForm(document.querySelector("#respond-form"), async (data) => {
+    await api("/confirmations/" + id + "/respond", {
+      method: "POST",
+      body: data,
+    });
+    closeModal();
+    await navigate("confirmations");
+    toast("Your response has been recorded.");
+  });
+}
+function confirmAction(title, message, action) {
+  modal(
+    title,
+    `<p>${esc(message)}</p><form id="confirm-action"><button class="button primary full" type="submit">Confirm</button></form>`,
+  );
+  handleForm(document.querySelector("#confirm-action"), async () => {
+    await action();
+    closeModal();
+  });
+}
+function deleteEvidence(id) {
+  confirmAction(
+    "Delete this experience?",
+    "This removes the entry and its confirmation history. It will no longer appear on your public passport.",
+    async () => {
+      await api("/evidence/" + id, { method: "DELETE" });
+      await navigate("passport");
+      toast("Experience removed.");
+    },
+  );
+}
+async function visibility(type, id, isPublic) {
+  try {
+    await api("/" + type + "/" + id + "/visibility", {
+      method: "PUT",
+      body: { publicConsent: isPublic },
+    });
+    await navigate("passport");
+    toast(
+      isPublic ? "Entry selected for public sharing." : "Entry is now private.",
+    );
+  } catch (e) {
+    toast(e.message);
+  }
+}
+async function loadQR() {
+  try {
+    const { qrDataUrl } = await api("/passport/qr");
+    const root = document.querySelector("#qr-container");
+    if (root)
+      root.innerHTML = `<img src="${esc(qrDataUrl)}" alt="QR code linking to your public skills passport" width="180" height="180"/><small>Scan to view your public passport</small>`;
+  } catch (e) {
+    const root = document.querySelector("#qr-container");
+    if (root) root.textContent = e.message;
+  }
+}
+function report(type, id) {
+  if (!user)
+    return modal(
+      "Sign in to report a concern",
+      `<p>Reporting uses an account so the team can follow up. Open the app and sign in, then return to this passport.</p><a class="button primary" href="/">Open SkillBridge ↗</a>`,
+    );
+  modal(
+    "Report a concern",
+    `<p>Reports are stored for the hackathon team to review. They are not monitored in real time.</p><form id="report-form"><label>What concerns you?<textarea name="reason" required minlength="15" maxlength="2000" rows="4" placeholder="Describe the issue without including sensitive personal information."></textarea></label><button class="button primary full" type="submit">Submit report</button></form>`,
+  );
+  handleForm(document.querySelector("#report-form"), async (data) => {
+    const result = await api("/reports", {
+      method: "POST",
+      body: { ...data, targetType: type, targetId: id },
+    });
+    closeModal();
+    toast(`Report recorded. Reference: ${result.id.slice(0, 8)}.`);
+  });
+}
+window.addEventListener("hashchange", () => {
+  if (!publicToken) navigate(location.hash.slice(1));
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") closeModal();
+  if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+    e.preventDefault();
+    document.querySelector("#search")?.focus();
+  }
+  const dialog = document.querySelector(".modal");
+  if (e.key === "Tab" && dialog) {
+    const all = [
+      ...dialog.querySelectorAll(
+        "button:not([disabled]),input,select,textarea,a[href],summary",
+      ),
+    ];
+    if (e.shiftKey && document.activeElement === all[0]) {
+      e.preventDefault();
+      all.at(-1).focus();
+    } else if (!e.shiftKey && document.activeElement === all.at(-1)) {
+      e.preventDefault();
+      all[0].focus();
+    }
+  }
+});
+async function boot() {
+  app.innerHTML = shell(
+    '<div class="loading" role="status">Getting your workspace ready…</div>',
+  );
+  try {
+    user = (await api("/me")).user;
+    if (publicToken) {
+      try {
+        await loadView();
+      } catch {
+        publicPassport = null;
+      }
+      render();
+    } else await navigate(view);
+  } catch (e) {
+    app.innerHTML = `<main class="startup-error"><h1>Let’s get you connected.</h1><p>${esc(e.message)}</p><p>If you’re developing locally, start the API with <code>npm run dev:server</code> in a second terminal.</p><button class="button primary" id="reload">Try again</button></main>`;
+    document.querySelector("#reload").onclick = boot;
+  }
+}
+boot();
